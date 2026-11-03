@@ -4,12 +4,60 @@ import{SEED_POSTS,LESSONS,SOURCES,SUGGESTIONS,QUESTION_BANK,TOPIC_GROUPS,localAn
 const NAV=[{id:'home',label:'Tổng quan',icon:LayoutDashboard},{id:'motion',label:'Quan sát vận động',icon:ScanEye},{id:'community',label:'Cộng đồng giáo dục',icon:UsersRound},{id:'assistant',label:'Trợ lý thông tin AI',icon:Bot},{id:'education',label:'Giáo dục hòa nhập',icon:GraduationCap},{id:'support',label:'Góc đồng hành',icon:HandHeart}];
 const uid=()=>crypto.randomUUID();const fmt=t=>new Date(t).toLocaleDateString('vi-VN');const read=(k,f)=>{try{return JSON.parse(localStorage.getItem(k))??f}catch{return f}};const store=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
 function App(){const[page,setPage]=useState('home'),[drawer,setDrawer]=useState(false),[user,setUser]=useState(null),[authOpen,setAuthOpen]=useState(false),[toast,setToast]=useState(''),[posts,setPosts]=useState(()=>read('ticare_posts',SEED_POSTS)),[saved,setSaved]=useState(()=>read('ticare_saved',[])),[reports,setReports]=useState(()=>read('ticare_reports',[])),[loading,setLoading]=useState(false);
-useEffect(()=>{store('ticare_posts',posts)},[posts]);useEffect(()=>{store('ticare_saved',saved)},[saved]);useEffect(()=>{store('ticare_reports',reports)},[reports]);useEffect(()=>{if(!live){setUser(read('ticare_user',null));return}supabase.auth.getUser().then(({data})=>setUser(data.user));const{data:{subscription}}=supabase.auth.onAuthStateChange((_e,s)=>setUser(s?.user??null));return()=>subscription.unsubscribe()},[]);
+const [resetOpen, setResetOpen] = useState(false);
+useEffect(()=>{store('ticare_posts',posts)},[posts]);useEffect(()=>{store('ticare_saved',saved)},[saved]);useEffect(()=>{store('ticare_reports',reports)},[reports]);
+useEffect(() => {
+  if (!supabase) {
+    setUser(null);
+    return;
+  }
+
+  let mounted = true;
+
+  const { data: { subscription } } =
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+
+      setUser(session?.user ?? null);
+
+      if (event === "PASSWORD_RECOVERY") {
+        setAuthOpen(false);
+        setResetOpen(true);
+      }
+    });
+
+
+  return () => {
+    mounted = false;
+    subscription.unsubscribe();
+  };
+}, []);
+
 const[motionRunning,setMotionRunning]=useState(false),[motionEvents,setMotionEvents]=useState([]),[motionPanel,setMotionPanel]=useState(false),[motionStopToken,setMotionStopToken]=useState(0);
 const onMotionEvent=useCallback((entry)=>{setMotionEvents(old=>[entry,...old].slice(0,30));setMotionPanel(true)},[]);
 const notify=(m)=>{setToast(m);setTimeout(()=>setToast(''),4200)};
 const go=(p)=>{setPage(p);setDrawer(false);window.scrollTo({top:0,behavior:'smooth'})};
-const signOut=async()=>{setMotionStopToken(t=>t+1);if(live)await supabase.auth.signOut();else{localStorage.removeItem('ticare_user');setUser(null)}notify('Đã đăng xuất')};
+
+const signOut = async () => {
+  if (!supabase) {
+    notify("Hệ thống xác thực chưa được kết nối.");
+    return;
+  }
+
+  try {
+    const { error } = await supabase.auth.signOut();
+
+    if (error) throw error;
+
+    setMotionStopToken(t => t + 1);
+    setUser(null);
+    notify("Đã đăng xuất thành công.");
+  } catch (error) {
+    console.error("TICare signOut:", error);
+    notify("Không thể đăng xuất: " + error.message);
+  }
+};
+
 const requireAuth=()=>{if(!user){setAuthOpen(true);notify('Hãy đăng nhập để sử dụng tính năng cộng đồng.');return false}return true};
 async function addPost(payload,file){if(!requireAuth())return false;setLoading(true);try{let author=user.user_metadata?.display_name||user.email?.split('@')[0]||user.name||'Thành viên';if(live){const {data,error}=await supabase.from('posts').insert({author_id:user.id,title:payload.title,body:payload.body,category:payload.category}).select().single();if(error)throw error;if(file){const path=`${user.id}/${data.id}/${uid()}-${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;const up=await supabase.storage.from('community-files').upload(path,file,{upsert:false});if(up.error)throw up.error;const ins=await supabase.from('post_attachments').insert({post_id:data.id,storage_path:path,filename:file.name,mime_type:file.type,size_bytes:file.size});if(ins.error)throw ins.error}await loadPosts();}else{let attachment=null;if(file){if(file.size>1_500_000)throw Error('Chế độ demo chỉ lưu tệp tối đa 1,5 MB. Để tải tệp lớn hơn, hãy kết nối Supabase.');attachment={name:file.name,type:file.type,data:await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file)})}}setPosts(p=>[{...payload,id:uid(),author,author_id:user.id,created_at:new Date().toISOString(),likes:0,comments:[],attachment},...p]);}notify('Đăng bài thành công!');return true}catch(e){notify('Không thể đăng bài: '+e.message);return false}finally{setLoading(false)}}
 async function loadPosts(){if(!live)return;const{data,error}=await supabase.from('posts').select('*,post_attachments(*)').eq('status','published').order('created_at',{ascending:false});if(error){notify('Lỗi tải bài viết: '+error.message);return}setPosts([...data.map(p=>({...p,author:p.profiles?.display_name||'Thành viên',comments:[],attachment:p.post_attachments?.[0]})),...SEED_POSTS])}
@@ -19,11 +67,463 @@ async function reportPost(id,reason){if(!requireAuth())return;if(live){const r=a
 async function removePost(id){if(!requireAuth())return;if(!confirm('Xóa bài viết này?'))return;if(live){const r=await supabase.from('posts').delete().eq('id',id);if(r.error){notify(r.error.message);return}await loadPosts()}else setPosts(p=>p.filter(x=>x.id!==id));notify('Đã xóa bài viết')}
 const current=NAV.find(n=>n.id===page);
 return <div className="app"><aside className={'sidebar '+(drawer?'open':'')}><div className="brand" onClick={()=>go('home')}><div className="brand-icon"><HeartHandshake size={24}/></div><div><b>TICare<span>.</span></b><small>HIỂU ĐÚNG ĐỂ ĐỒNG HÀNH</small></div></div><div className="side-label">KHÔNG GIAN LÀM VIỆC</div><nav>{NAV.map(n=><button key={n.id} className={'nav-link '+(page===n.id?'active':'')} onClick={()=>go(n.id)}><n.icon size={19}/><span>{n.label}</span>{page===n.id&&<span className="active-dot"/>}</button>)}</nav><div className="side-bottom"><div className="privacy-note"><ShieldCheck size={20}/><div><b>Tôn trọng sự khác biệt</b><small>Không chẩn đoán y tế. Không lưu video camera mặc định.</small></div></div><div className="sidebar-version">TICare • Phiên bản thử nghiệm 1.0</div></div></aside>{drawer&&<div className="shade" onClick={()=>setDrawer(false)}/>}
-<div className="workspace"><header className="topbar"><button className="icon-button mobile-menu" onClick={()=>setDrawer(true)}><Menu size={22}/></button><div className="breadcrumbs"><span>Không gian TICare</span><ChevronRight size={15}/><strong>{current?.label}</strong></div><div className="top-actions">{motionRunning&&<button className="btn btn-outline small" onClick={()=>go('motion')}><Camera size={15}/> Đang quan sát</button>}<button className="icon-button" title="Thông báo Motion Insight" onClick={()=>setMotionPanel(v=>!v)}><Bell size={19}/>{motionEvents.length>0&&<span className="motion-count">{motionEvents.length}</span>}</button><span className={'mode-pill '+(live?'online':'')}><span className="status-dot"/>{live?'Đã kết nối dữ liệu':'Chế độ demo'}</span>{user?<button className="account" onClick={signOut}><UserRound size={17}/><span>{user.user_metadata?.display_name||user.name||user.email?.split('@')[0]}</span><LogOut size={15}/></button>:<button className="btn btn-outline small" onClick={()=>setAuthOpen(true)}><LogIn size={16}/> Đăng nhập</button>}</div></header>
-<main className="main">{page==='home'&&<Home go={go} posts={posts}/ >}<div style={{display:page==='motion'?'block':'none'}}><Motion onRunningChange={setMotionRunning} onMotionEvent={onMotionEvent} stopToken={motionStopToken}/></div>{page==='community'&&<Community posts={posts} user={user} onPost={addPost} onComment={addComment} onReport={reportPost} onRemove={removePost} requireAuth={requireAuth} saved={saved} setSaved={setSaved} loading={loading} notify={notify}/ >}{page==='assistant'&&<Assistant user={user} notify={notify}/ >}{page==='education'&&<Education/>}{page==='support'&&<Support/>}</main>{motionPanel&&<section className="motion-notification-panel"><div className="motion-notification-head"><b>Thông báo Motion Insight</b><button className="icon-button" onClick={()=>setMotionPanel(false)} aria-label="Đóng thông báo"><X size={17}/></button></div>{motionEvents.length===0?<p>Chưa có thông báo trong phiên này.</p>:<>{motionEvents.map(e=><div className={"motion-event "+e.level} key={e.id}><strong>{e.level==='warning'?'Cảnh báo tần suất cao':'Thông báo chuyển động lặp lại'}</strong><small>{new Date(e.time).toLocaleTimeString('vi-VN')} · {e.frequency} chu kỳ/phút (ước tính)</small><p>Chỉ là tín hiệu thử nghiệm, không xác định tic hoặc bệnh lý.</p></div>)}<button className="btn btn-outline small" onClick={()=>setMotionEvents([])}>Xóa lịch sử phiên</button></>}</section>}<footer className="footer">© 2026 TICare · Nền tảng thông tin và hỗ trợ giáo viên · Không thay thế đánh giá chuyên môn y tế</footer></div>{authOpen&&<AuthModal onClose={()=>setAuthOpen(false)} onSuccess={u=>{setUser(u);setAuthOpen(false);notify('Đăng nhập thành công!')}} notify={notify}/ >}{toast&&<div className="toast"><Info size={18}/>{toast}<button onClick={()=>setToast('')}><X size={16}/></button></div>}</div>}
+<div className="workspace"><header className="topbar"><button className="icon-button mobile-menu" onClick={()=>setDrawer(true)}><Menu size={22}/></button><div className="breadcrumbs"><span>Không gian TICare</span><ChevronRight size={15}/><strong>{current?.label}</strong></div><div className="top-actions">{motionRunning&&<button className="btn btn-outline small" onClick={()=>go('motion')}><Camera size={15}/> Đang quan sát</button>}<button className="icon-button" title="Thông báo Motion Insight" onClick={()=>setMotionPanel(v=>!v)}><Bell size={19}/>{motionEvents.length>0&&<span className="motion-count">{motionEvents.length}</span>}</button><span className={'mode-pill '+(live?'online':'')}><span className="status-dot"/>{live?'Đã cấu hình Supabase':'Chưa cấu hình Supabase'}</span>{user?<button className="account" onClick={signOut}><UserRound size={17}/><span>{user.user_metadata?.display_name||user.name||user.email?.split('@')[0]}</span><LogOut size={15}/></button>:<button className="btn btn-outline small" onClick={()=>setAuthOpen(true)}><LogIn size={16}/> Đăng nhập</button>}</div></header>
+<main className="main">{page==='home'&&<Home go={go} posts={posts}/ >}<div style={{display:page==='motion'?'block':'none'}}><Motion onRunningChange={setMotionRunning} onMotionEvent={onMotionEvent} stopToken={motionStopToken}/></div>{page==='community'&&<Community posts={posts} user={user} onPost={addPost} onComment={addComment} onReport={reportPost} onRemove={removePost} requireAuth={requireAuth} saved={saved} setSaved={setSaved} loading={loading} notify={notify}/ >}{page==='assistant'&&<Assistant user={user} notify={notify}/ >}{page==='education'&&<Education/>}{page==='support'&&<Support/>}</main>{motionPanel&&<section className="motion-notification-panel"><div className="motion-notification-head"><b>Thông báo Motion Insight</b><button className="icon-button" onClick={()=>setMotionPanel(false)} aria-label="Đóng thông báo"><X size={17}/></button></div>{motionEvents.length===0?<p>Chưa có thông báo trong phiên này.</p>:<>{motionEvents.map(e=><div className={"motion-event "+e.level} key={e.id}><strong>{e.level==='warning'?'Cảnh báo tần suất cao':'Thông báo chuyển động lặp lại'}</strong><small>{new Date(e.time).toLocaleTimeString('vi-VN')} · {e.frequency} chu kỳ/phút (ước tính)</small><p>Chỉ là tín hiệu thử nghiệm, không xác định tic hoặc bệnh lý.</p></div>)}<button className="btn btn-outline small" onClick={()=>setMotionEvents([])}>Xóa lịch sử phiên</button></>}</section>}<footer className="footer">© 2026 TICare · Nền tảng thông tin và hỗ trợ giáo viên · Không thay thế đánh giá chuyên môn y tế</footer></div>{authOpen&&<AuthModal onClose={()=>setAuthOpen(false)} onSuccess={u=>{setUser(u);setAuthOpen(false);notify('Đăng nhập thành công!')}} notify={notify}/ >}{resetOpen&&<ResetPasswordModal onClose={()=>setResetOpen(false)} notify={notify}/>}{toast&&<div className="toast"><Info size={18}/>{toast}<button onClick={()=>setToast('')}><X size={16}/></button></div>}</div>}
 function Heading({eyebrow,title,desc,action}){return <div className="page-heading"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1>{desc&&<p>{desc}</p>}</div>{action}</div>}
 function Home({go,posts}){return <><div className="hero"><div className="hero-content"><span className="hero-tag"><span className="glow-dot"/> NỀN TẢNG GIÁO DỤC HÒA NHẬP</span><h1>Hiểu đúng để<br/><em>đồng hành tốt hơn.</em></h1><p>TICare kết nối công nghệ, tri thức và sự thấu cảm — hỗ trợ giáo viên tạo nên một lớp học nơi mỗi sự khác biệt đều được tôn trọng.</p><div className="hero-buttons"><button className="btn btn-mint" onClick={()=>go('assistant')}>Khám phá trợ lý AI <ArrowRight size={17}/></button><button className="btn btn-ghost" onClick={()=>go('motion')}>Thử camera <ScanEye size={17}/></button></div></div><div className="hero-art"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="heart-core"><HeartHandshake size={70} strokeWidth={1.4}/></div><div className="floating f1"><BookOpen size={19}/> Kiến thức</div><div className="floating f2"><UsersRound size={19}/> Cộng đồng</div><div className="floating f3"><Activity size={19}/> Công nghệ</div></div></div><div className="section-row"><div><h2>Khám phá TICare</h2><p>Mọi công cụ cần thiết, trong một không gian thống nhất.</p></div></div><div className="feature-grid">{[{id:'motion',icon:ScanEye,color:'teal',title:'Quan sát vận động',desc:'Camera nhận diện điểm khớp và mô tả tín hiệu chuyển động lặp lại.'},{id:'community',icon:UsersRound,color:'blue',title:'Cộng đồng giáo dục',desc:'Chia sẻ bài viết, tài liệu và kinh nghiệm hỗ trợ học sinh.'},{id:'assistant',icon:Bot,color:'violet',title:'Trợ lý thông tin AI',desc:'Tra cứu, diễn giải tiếng Việt và dẫn nguồn kiến thức về tic.'},{id:'education',icon:GraduationCap,color:'amber',title:'Giáo dục hòa nhập',desc:'Bài học và hoạt động lan tỏa sự cảm thông.'},{id:'support',icon:HandHeart,color:'pink',title:'Góc đồng hành',desc:'Gợi ý ứng xử và phối hợp hỗ trợ trong lớp học.'}].map(x=><button className="feature-card" key={x.id} onClick={()=>go(x.id)}><div className={'feature-icon '+x.color}><x.icon size={24}/></div><h3>{x.title}</h3><p>{x.desc}</p><span>Khám phá <ArrowRight size={15}/></span></button>)}</div><div className="home-lower"><div className="panel"><div className="panel-title"><h3>Bài viết mới từ cộng đồng</h3><button className="link-button" onClick={()=>go('community')}>Xem tất cả <ArrowRight size={15}/></button></div>{posts.slice(0,3).map(p=><div className="compact-post" key={p.id}><span className="post-category">{p.category}</span><b>{p.title}</b><small>{p.author} · {fmt(p.created_at)}</small></div>)}</div><div className="panel tip-panel"><div className="tip-icon"><Heart size={24}/></div><h3>Một lời nhắc nhỏ</h3><p>Không phải mọi chuyển động lặp lại đều là tic. Một công cụ quan sát chỉ có thể hỗ trợ mô tả chuyển động — không thể thay thế đánh giá của chuyên gia.</p><button className="link-button" onClick={()=>go('education')}>Tìm hiểu thêm <ArrowRight size={15}/></button></div></div></>}
-function AuthModal({onClose,onSuccess,notify}){const[tab,setTab]=useState('login'),[name,setName]=useState(''),[email,setEmail]=useState(''),[password,setPassword]=useState(''),[busy,setBusy]=useState(false);async function submit(e){e.preventDefault();setBusy(true);try{if(live){if(tab==='register'){const{data,error}=await supabase.auth.signUp({email,password,options:{data:{display_name:name}}});if(error)throw error;if(!data.session){notify('Kiểm tra email để xác nhận tài khoản rồi đăng nhập.');onClose();return}onSuccess(data.user)}else{const{data,error}=await supabase.auth.signInWithPassword({email,password});if(error)throw error;onSuccess(data.user)}}else{if(tab==='register'){if(password.length<6)throw Error('Mật khẩu cần ít nhất 6 ký tự.');let accounts=read('ticare_accounts',[]);if(accounts.some(a=>a.email===email))throw Error('Email đã có tài khoản demo.');accounts.push({id:uid(),name,email,password});store('ticare_accounts',accounts);let u={id:accounts.at(-1).id,name,email};store('ticare_user',u);onSuccess(u)}else{const account=read('ticare_accounts',[]).find(a=>a.email===email&&a.password===password);if(!account)throw Error('Chưa có tài khoản demo hoặc sai thông tin. Hãy chọn Đăng ký.');let u={id:account.id,name:account.name,email:account.email};store('ticare_user',u);onSuccess(u)}}}catch(e){notify(e.message)}finally{setBusy(false)}}return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}><div className="modal auth-modal"><button className="close" onClick={onClose}><X size={20}/></button><div className="auth-logo"><HeartHandshake size={28}/></div><h2>Chào mừng đến TICare</h2><p>Tham gia cộng đồng chia sẻ và lan tỏa sự thấu hiểu.</p><div className="tab-switch"><button className={tab==='login'?'selected':''} onClick={()=>setTab('login')}>Đăng nhập</button><button className={tab==='register'?'selected':''} onClick={()=>setTab('register')}>Đăng ký</button></div><form onSubmit={submit} className="form-stack">{tab==='register'&&<label>Tên hiển thị<input required maxLength={60} value={name} onChange={e=>setName(e.target.value)} placeholder="Tên của bạn"/></label>}<label>Email<input required type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="email@example.com"/></label><label>Mật khẩu<input required minLength={6} type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Tối thiểu 6 ký tự"/></label><button className="btn btn-primary full" disabled={busy}>{busy?'Đang xử lý...':tab==='login'?'Đăng nhập':'Tạo tài khoản'}<ArrowRight size={17}/></button></form><div className="auth-hint"><Info size={16}/>{live?'Tài khoản được xác thực bằng Supabase Auth.':'Chế độ demo: tài khoản chỉ lưu trong trình duyệt này, không dùng mật khẩu thật.'}</div></div></div>}
+
+function AuthModal({ onClose, onSuccess, notify, initialTab = "login" }) {
+  const [tab, setTab] = useState(initialTab);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [success, setSuccess] = useState(false);
+
+  function changeTab(next) {
+    setTab(next);
+    setMessage("");
+    setSuccess(false);
+    setPassword("");
+    setConfirmPassword("");
+  }
+
+  function getErrorMessage(error) {
+    const text = error?.message || "Đã xảy ra lỗi.";
+
+    if (/invalid login credentials/i.test(text)) {
+      return "Email hoặc mật khẩu không chính xác.";
+    }
+
+    if (/email not confirmed/i.test(text)) {
+      return "Tài khoản chưa xác nhận email. Hãy kiểm tra hộp thư.";
+    }
+
+    if (/user already registered/i.test(text)) {
+      return "Email này đã được đăng ký. Hãy đăng nhập hoặc đặt lại mật khẩu.";
+    }
+
+    if (/password should be|weak password/i.test(text)) {
+      return "Mật khẩu chưa đáp ứng yêu cầu bảo mật.";
+    }
+
+    if (/rate limit|too many requests|over_email_send_rate_limit/i.test(text)) {
+      return "Bạn đã thực hiện quá nhiều yêu cầu. Hãy thử lại sau.";
+    }
+
+    if (/failed to fetch|networkerror|network request failed/i.test(text)) {
+      return "Không thể kết nối Supabase. Hãy kiểm tra kết nối mạng và cấu hình website.";
+    }
+
+    return text;
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    if (busy) return;
+
+    setBusy(true);
+    setMessage("");
+    setSuccess(false);
+
+    try {
+      if (!supabase) {
+        throw new Error(
+          "Hệ thống tài khoản chưa được cấu hình. Vui lòng liên hệ quản trị viên TICare."
+        );
+      }
+
+      const cleanEmail = email.trim().toLowerCase();
+
+      if (tab === "forgot") {
+        const { error } = await supabase.auth.resetPasswordForEmail(
+          cleanEmail,
+          {
+            redirectTo: window.location.origin + "/"
+          }
+        );
+
+        if (error) throw error;
+
+        setSuccess(true);
+        setMessage(
+          "Nếu email có tài khoản, bạn sẽ nhận được hướng dẫn đặt lại mật khẩu. Hãy kiểm tra cả thư mục Spam."
+        );
+        return;
+      }
+
+      if (tab === "register") {
+        if (!name.trim()) {
+          throw new Error("Vui lòng nhập tên hiển thị.");
+        }
+
+        if (password.length < 8) {
+          throw new Error("Mật khẩu phải có ít nhất 8 ký tự.");
+        }
+
+        if (password !== confirmPassword) {
+          throw new Error("Hai mật khẩu không khớp.");
+        }
+
+        const { data, error } = await supabase.auth.signUp({
+          email: cleanEmail,
+          password,
+          options: {
+            data: {
+              display_name: name.trim()
+            },
+            emailRedirectTo: window.location.origin + "/"
+          }
+        });
+
+        if (error) throw error;
+
+        if (data.session && data.user) {
+          onSuccess(data.user);
+          return;
+        }
+
+        setSuccess(true);
+        setPassword("");
+        setConfirmPassword("");
+        setMessage(
+          "Yêu cầu đăng ký đã được tiếp nhận. Nếu cần xác nhận email, hãy mở liên kết được gửi tới hộp thư trước khi đăng nhập."
+        );
+        return;
+      }
+
+      if (tab === "login") {
+        const { data, error } =
+          await supabase.auth.signInWithPassword({
+            email: cleanEmail,
+            password
+          });
+
+        if (error) throw error;
+
+        if (!data.user || !data.session) {
+          throw new Error(
+            "Không nhận được phiên đăng nhập hợp lệ."
+          );
+        }
+
+        onSuccess(data.user);
+      }
+    } catch (error) {
+      console.error("TICare Auth:", error);
+      setSuccess(false);
+      setMessage(getErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={e => {
+        if (e.target === e.currentTarget && !busy) onClose();
+      }}
+    >
+      <div className="modal auth-modal">
+        <button
+          type="button"
+          className="close"
+          onClick={onClose}
+          disabled={busy}
+          aria-label="Đóng"
+        >
+          <X size={20} />
+        </button>
+
+        <div className="auth-logo">
+          <HeartHandshake size={28} />
+        </div>
+
+        <h2>
+          {tab === "register"
+            ? "Tạo tài khoản TICare"
+            : tab === "forgot"
+              ? "Khôi phục mật khẩu"
+              : "Chào mừng trở lại"}
+        </h2>
+
+        <p>
+          {tab === "register"
+            ? "Tham gia cộng đồng giáo dục và lan tỏa sự thấu hiểu."
+            : tab === "forgot"
+              ? "Nhập email đã đăng ký để nhận hướng dẫn đặt lại mật khẩu."
+              : "Đăng nhập để tiếp tục đồng hành cùng TICare."}
+        </p>
+
+        {tab !== "forgot" && (
+          <div className="tab-switch">
+            <button
+              type="button"
+              className={tab === "login" ? "selected" : ""}
+              onClick={() => changeTab("login")}
+              disabled={busy}
+            >
+              Đăng nhập
+            </button>
+
+            <button
+              type="button"
+              className={tab === "register" ? "selected" : ""}
+              onClick={() => changeTab("register")}
+              disabled={busy}
+            >
+              Đăng ký
+            </button>
+          </div>
+        )}
+
+        <form onSubmit={submit} className="form-stack">
+          {tab === "register" && (
+            <label>
+              Tên hiển thị
+              <input
+                required
+                maxLength={60}
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="Tên của bạn"
+                autoComplete="nickname"
+                disabled={busy}
+              />
+            </label>
+          )}
+
+          <label>
+            Địa chỉ email
+            <input
+              required
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="email@example.com"
+              autoComplete="email"
+              disabled={busy}
+            />
+          </label>
+
+          {tab !== "forgot" && (
+            <label>
+              Mật khẩu
+              <input
+                required
+                minLength={tab === "register" ? 8 : undefined}
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder={
+                  tab === "register"
+                    ? "Tối thiểu 8 ký tự"
+                    : "Nhập mật khẩu"
+                }
+                autoComplete={
+                  tab === "register"
+                    ? "new-password"
+                    : "current-password"
+                }
+                disabled={busy}
+              />
+            </label>
+          )}
+
+          {tab === "register" && (
+            <label>
+              Xác nhận mật khẩu
+              <input
+                required
+                type="password"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                placeholder="Nhập lại mật khẩu"
+                autoComplete="new-password"
+                disabled={busy}
+              />
+            </label>
+          )}
+
+          {message && (
+            <div
+              role="status"
+              aria-live="polite"
+              style={{
+                padding: "12px",
+                borderRadius: "10px",
+                background: success ? "#ecfdf5" : "#fef2f2",
+                color: success ? "#047857" : "#b91c1c",
+                fontSize: "14px",
+                lineHeight: 1.6
+              }}
+            >
+              {message}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className="btn btn-primary full"
+            disabled={busy || !live}
+          >
+            {busy
+              ? "Đang xử lý..."
+              : tab === "register"
+                ? "Tạo tài khoản"
+                : tab === "forgot"
+                  ? "Gửi email khôi phục"
+                  : "Đăng nhập"}
+
+            {busy
+              ? <LoaderCircle className="spin" size={17} />
+              : <ArrowRight size={17} />}
+          </button>
+
+          {tab === "login" && (
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => changeTab("forgot")}
+              disabled={busy}
+              style={{ justifyContent: "center" }}
+            >
+              Quên mật khẩu?
+            </button>
+          )}
+
+          {tab === "forgot" && (
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => changeTab("login")}
+              disabled={busy}
+              style={{ justifyContent: "center" }}
+            >
+              <ArrowLeft size={16} />
+              Quay lại đăng nhập
+            </button>
+          )}
+        </form>
+
+        <div className="auth-hint">
+          <ShieldCheck size={16} />
+          {live
+            ? "Tài khoản được xác thực bằng Supabase Auth."
+            : "Hệ thống tài khoản tạm thời không khả dụng."}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResetPasswordModal({ onClose, notify }) {
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function submit(e) {
+    e.preventDefault();
+    if (busy) return;
+
+    if (password.length < 8) {
+      setMessage("Mật khẩu phải có ít nhất 8 ký tự.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setMessage("Hai mật khẩu không khớp.");
+      return;
+    }
+
+    setBusy(true);
+    setMessage("");
+
+    try {
+      if (!supabase) {
+        throw new Error("Không thể kết nối hệ thống xác thực.");
+      }
+
+      const { error } = await supabase.auth.updateUser({
+        password
+      });
+
+      if (error) throw error;
+
+      setPassword("");
+      setConfirmPassword("");
+      notify("Đổi mật khẩu thành công.");
+      onClose();
+    } catch (error) {
+      console.error("TICare reset password:", error);
+      setMessage(error.message || "Không thể đổi mật khẩu.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal auth-modal">
+        <div className="auth-logo">
+          <Lock size={28} />
+        </div>
+
+        <h2>Đặt lại mật khẩu</h2>
+        <p>Hãy tạo mật khẩu mới cho tài khoản TICare.</p>
+
+        <form className="form-stack" onSubmit={submit}>
+          <label>
+            Mật khẩu mới
+            <input
+              type="password"
+              required
+              minLength={8}
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              autoComplete="new-password"
+              placeholder="Tối thiểu 8 ký tự"
+              disabled={busy}
+            />
+          </label>
+
+          <label>
+            Xác nhận mật khẩu mới
+            <input
+              type="password"
+              required
+              value={confirmPassword}
+              onChange={e => setConfirmPassword(e.target.value)}
+              autoComplete="new-password"
+              placeholder="Nhập lại mật khẩu mới"
+              disabled={busy}
+            />
+          </label>
+
+          {message && (
+            <p role="alert" style={{ color: "#b91c1c" }}>
+              {message}
+            </p>
+          )}
+
+          <button
+            className="btn btn-primary full"
+            type="submit"
+            disabled={busy}
+          >
+            {busy ? "Đang cập nhật..." : "Lưu mật khẩu mới"}
+            <ShieldCheck size={17} />
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function Community({posts,user,onPost,onComment,onReport,onRemove,requireAuth,saved,setSaved,loading,notify}){const[filter,setFilter]=useState('Tất cả'),[query,setQuery]=useState(''),[compose,setCompose]=useState(false),[selected,setSelected]=useState(null),[report,setReport]=useState(null);const categories=['Tất cả','Kiến thức về tic','Tài nguyên giáo dục','Tình huống lớp học','Kinh nghiệm chia sẻ'];const visible=posts.filter(p=>(filter==='Tất cả'||p.category===filter)&&`${p.title} ${p.body} ${p.author}`.toLowerCase().includes(query.toLowerCase()));return <><Heading eyebrow="KHÔNG GIAN CHIA SẺ" title="Cộng đồng TICare" desc="Cùng chia sẻ kiến thức, bài giảng và những cách làm giúp lớp học hòa nhập hơn." action={<button className="btn btn-primary" onClick={()=>{if(requireAuth())setCompose(true)}}><Plus size={18}/> Viết bài mới</button>}/><div className="community-layout"><div><div className="community-toolbar"><div className="search-field"><Search size={18}/><input placeholder="Tìm bài viết, tài liệu, chủ đề..." value={query} onChange={e=>setQuery(e.target.value)}/></div><div className="filter-pills">{categories.map(c=><button key={c} className={filter===c?'on':''} onClick={()=>setFilter(c)}>{c}</button>)}</div></div><div className="posts-list">{visible.length===0&&<div className="empty">Chưa tìm thấy bài viết phù hợp.</div>}{visible.map(p=><article className="post-card" key={p.id}><div className="post-head"><div className="avatar">{(p.author||'T')[0].toUpperCase()}</div><div><b>{p.author||'Thành viên'}</b><small>{fmt(p.created_at)} · <span className="post-category">{p.category}</span></small></div>{user&&p.author_id===user.id&&<button className="icon-button danger" title="Xóa bài" onClick={()=>onRemove(p.id)}><Trash2 size={17}/></button>}</div><h3>{p.title}</h3><p className="post-preview">{p.body}</p>{p.attachment&&<div className="attachment"><Paperclip size={16}/>{p.attachment.name||p.attachment.filename}</div>}<div className="post-actions"><button onClick={()=>setSelected(p)}><MessageCircle size={17}/> Bình luận {p.comments?.length||''}</button><button onClick={()=>{if(!requireAuth())return;setSaved(a=>a.includes(p.id)?a.filter(x=>x!==p.id):[...a,p.id])}}><Bookmark size={17} fill={saved.includes(p.id)?'currentColor':'none'}/> {saved.includes(p.id)?'Đã lưu':'Lưu bài'}</button><button onClick={()=>{if(requireAuth())setReport(p)}}><Flag size={17}/> Báo cáo</button><button className="readmore" onClick={()=>setSelected(p)}>Đọc tiếp <ArrowRight size={16}/></button></div></article>)}</div></div><aside className="community-aside"><div className="panel"><div className="side-panel-icon"><UsersRound size={22}/></div><h3>Chào mừng đến cộng đồng!</h3><p>Một không gian để cùng học hỏi, chia sẻ và hỗ trợ lẫn nhau.</p><div className="stat-row"><b>{posts.length}</b><span>bài viết</span></div><div className="stat-row"><b>{categories.length-1}</b><span>chủ đề</span></div></div><div className="panel rule-panel"><h3><ShieldCheck size={18}/> Nguyên tắc chia sẻ</h3><p>Không công khai thông tin nhận diện hoặc sức khỏe của học sinh; không đưa ra chẩn đoán hay lời khuyên điều trị thiếu căn cứ.</p><p>Bài đăng cộng đồng là nội dung do người dùng chia sẻ, không mặc nhiên là thông tin đã được TICare xác thực.</p></div></aside></div>{compose&&<ComposeModal onClose={()=>setCompose(false)} onPost={onPost} loading={loading}/ >}{selected&&<PostModal post={posts.find(p=>p.id===selected.id)||selected} onClose={()=>setSelected(null)} onComment={onComment} requireAuth={requireAuth} notify={notify}/ >}{report&&<ReportModal post={report} onClose={()=>setReport(null)} onSubmit={onReport}/>}</>}
 function ComposeModal({onClose,onPost,loading}){const[title,setTitle]=useState(''),[body,setBody]=useState(''),[category,setCategory]=useState('Tài nguyên giáo dục'),[file,setFile]=useState(null);async function submit(e){e.preventDefault();if(!title.trim()||!body.trim())return;const ok=await onPost({title:title.trim(),body:body.trim(),category},file);if(ok)onClose()}return <div className="modal-backdrop"><div className="modal compose-modal"><button className="close" onClick={onClose}><X/></button><h2>Chia sẻ cùng cộng đồng</h2><p>Những tài liệu nhỏ có thể tạo nên thay đổi lớn.</p><form onSubmit={submit} className="form-stack"><label>Tiêu đề<input required maxLength={150} value={title} onChange={e=>setTitle(e.target.value)} placeholder="Đặt tiêu đề dễ hiểu..."/></label><label>Chủ đề<select value={category} onChange={e=>setCategory(e.target.value)}>{['Kiến thức về tic','Tài nguyên giáo dục','Tình huống lớp học','Kinh nghiệm chia sẻ'].map(x=><option key={x}>{x}</option>)}</select></label><label>Nội dung<textarea required rows={8} value={body} onChange={e=>setBody(e.target.value)} placeholder="Chia sẻ bài học, hoạt động, kinh nghiệm... (không đăng dữ liệu riêng tư của học sinh)"/></label><label className="file-input"><Paperclip size={18}/> {file?file.name:'Đính kèm PDF, DOCX, PPTX hoặc ảnh'}<input type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,image/png,image/jpeg,image/webp" onChange={e=>setFile(e.target.files[0]||null)}/></label><div className="muted small-text">Giới hạn tệp: 8 MB khi kết nối Supabase; 1,5 MB trong chế độ demo. Bài đăng công khai sau khi gửi.</div><button disabled={loading} className="btn btn-primary full">{loading?'Đang đăng...':'Đăng bài viết'} <Send size={16}/></button></form></div></div>}
 function PostModal({post,onClose,onComment,requireAuth,notify}){const[text,setText]=useState('');const[comments,setComments]=useState([]);useEffect(()=>{if(!live||post.id.startsWith('seed-'))return;supabase.from('comments').select('*,profiles(display_name)').eq('post_id',post.id).order('created_at').then(({data})=>setComments(data||[]))},[post.id]);const all=live?comments:(post.comments||[]);async function submit(e){e.preventDefault();if(!text.trim())return;if(!requireAuth())return;if(live&&post.id.startsWith('seed-')){notify('Đây là bài minh họa. Hãy chọn bài do thành viên đăng để bình luận.');return}await onComment(post.id,text.trim());if(live){const{data}=await supabase.from('comments').select('*,profiles(display_name)').eq('post_id',post.id).order('created_at');setComments(data||[])}setText('')}async function download(){if(post.attachment?.data){const a=document.createElement('a');a.href=post.attachment.data;a.download=post.attachment.name;a.click()}else if(live&&post.attachment?.storage_path){const{data,error}=await supabase.storage.from('community-files').createSignedUrl(post.attachment.storage_path,60);if(error){notify(error.message);return}window.open(data.signedUrl,'_blank','noopener,noreferrer')}}return <div className="modal-backdrop"><div className="modal post-modal"><button className="close" onClick={onClose}><X/></button><span className="post-category">{post.category}</span><h2>{post.title}</h2><div className="byline">{post.author} · {fmt(post.created_at)}</div><div className="post-full">{post.body}</div>{post.attachment&&<button className="attachment attachment-button" onClick={download}><Download size={17}/>{post.attachment.name||post.attachment.filename}</button>}<div className="comment-section"><h3>Bình luận ({all.length})</h3>{all.map(c=><div className="comment" key={c.id}><b>{c.profiles?.display_name||c.author||'Thành viên'}</b><p>{c.body}</p></div>)}<form onSubmit={submit} className="comment-form"><input value={text} onChange={e=>setText(e.target.value)} placeholder="Viết bình luận tích cực..."/><button className="btn btn-primary" disabled={!text.trim()}><Send size={16}/></button></form></div></div></div>}
