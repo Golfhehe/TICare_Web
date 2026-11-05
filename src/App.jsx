@@ -3,9 +3,8 @@ import {HeartHandshake,LayoutDashboard,ScanEye,UsersRound,Bot,GraduationCap,Hand
 import{SEED_POSTS,LESSONS,SOURCES,SUGGESTIONS,QUESTION_BANK,TOPIC_GROUPS,localAnswer}from './data';import{supabase,live}from './supabase';
 const NAV=[{id:'home',label:'Tổng quan',icon:LayoutDashboard},{id:'motion',label:'Quan sát vận động',icon:ScanEye},{id:'community',label:'Cộng đồng giáo dục',icon:UsersRound},{id:'assistant',label:'Trợ lý thông tin AI',icon:Bot},{id:'education',label:'Giáo dục hòa nhập',icon:GraduationCap},{id:'support',label:'Góc đồng hành',icon:HandHeart}];
 const uid=()=>crypto.randomUUID();const fmt=t=>new Date(t).toLocaleDateString('vi-VN');const read=(k,f)=>{try{return JSON.parse(localStorage.getItem(k))??f}catch{return f}};const store=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
-function App(){const[page,setPage]=useState('home'),[drawer,setDrawer]=useState(false),[user,setUser]=useState(null),[authOpen,setAuthOpen]=useState(false),[toast,setToast]=useState(''),[posts,setPosts]=useState([]),[saved,setSaved]=useState([]),[role,setRole]=useState('member'),[reports,setReports]=useState(()=>read('ticare_reports',[])),[loading,setLoading]=useState(false);
+function App(){const[page,setPage]=useState('home'),[drawer,setDrawer]=useState(false),[user,setUser]=useState(null),[authOpen,setAuthOpen]=useState(false),[toast,setToast]=useState(''),[posts,setPosts]=useState([]),[saved,setSaved]=useState([]),[role,setRole]=useState('member'),[profile,setProfile]=useState(null),[profileOpen,setProfileOpen]=useState(false),[communityView,setCommunityView]=useState('all'),[loading,setLoading]=useState(false);
 const [resetOpen, setResetOpen] = useState(false);
-useEffect(()=>{store('ticare_reports',reports)},[reports]);
 useEffect(() => {
   if (!supabase) {
     setUser(null);
@@ -37,17 +36,19 @@ useEffect(() => {
 useEffect(() => {
   let valid = true;
   setRole('member');
+  setProfile(null);
   setSaved([]);
   if (!supabase || !user?.id) return;
   async function loadAccountData() {
     const [profile, favorites] = await Promise.all([
-      supabase.from('profiles').select('role').eq('id', user.id).maybeSingle(),
+      supabase.from('profiles').select('id,role,display_name').eq('id', user.id).maybeSingle(),
       supabase.from('saved_posts').select('post_id').eq('user_id', user.id)
     ]);
     if (!valid) return;
     if (profile.error) console.error('Lỗi tải quyền:', profile.error);
     if (favorites.error) console.error('Lỗi tải bài đã lưu:', favorites.error);
     setRole(profile.data?.role === 'admin' ? 'admin' : 'member');
+    setProfile(profile.data || null);
     setSaved((favorites.data || []).map(item => item.post_id));
   }
   loadAccountData();
@@ -71,6 +72,7 @@ const signOut = async () => {
 
     setMotionStopToken(t => t + 1);
     setUser(null);
+    if(page==='admin') setPage('community');
     notify("Đã đăng xuất thành công.");
   } catch (error) {
     console.error("TICare signOut:", error);
@@ -92,7 +94,7 @@ async function loadPosts() {
     .select('*,post_attachments(*)')
     .eq('status', 'published')
     .order('created_at', { ascending: false })
-    .limit(100);
+    .limit(500);
   if (error) { console.error(error); notify('Lỗi tải bài viết: ' + error.message); return; }
   const ids = [...new Set((data || []).map(p => p.author_id).filter(Boolean))];
   let names = {};
@@ -144,6 +146,30 @@ async function addPost(payload, file) {
   } finally { setLoading(false); }
 }
 
+async function updatePost(id, payload) {
+  if (!requireAuth()) return false;
+  const old = posts.find(p => p.id === id);
+  if (!old || old.author_id !== user.id || old.status !== 'published') {
+    notify('Chỉ sửa được bài đang công khai của chính bạn.'); return false;
+  }
+  const { error } = await supabase.from('posts').update({
+    title: payload.title.trim(), body: payload.body.trim(), category: payload.category
+  }).eq('id', id).eq('author_id', user.id).eq('status','published');
+  if (error) { notify('Không thể sửa bài: ' + error.message); return false; }
+  await loadPosts(); notify('Đã cập nhật bài viết.'); return true;
+}
+
+async function updateProfile(displayName) {
+  if (!requireAuth()) return false;
+  const clean = displayName.trim();
+  if (!clean || clean.length > 60) { notify('Tên hiển thị phải từ 1 đến 60 ký tự.'); return false; }
+  const { error } = await supabase.from('profiles').update({ display_name: clean }).eq('id', user.id);
+  if (error) { notify('Không thể sửa tên: ' + error.message); return false; }
+  setProfile(old => ({ ...old, display_name: clean }));
+  await loadPosts();
+  notify('Đã cập nhật tên hiển thị.'); return true;
+}
+
 async function addComment(id, body) {
   if (!requireAuth()) return false;
   if (!body.trim() || body.length > 3000) return false;
@@ -179,7 +205,7 @@ async function toggleSaved(id) {
 async function removePost(id) {
   if (!requireAuth()) return;
   if (!window.confirm('Xóa bài viết này?')) return;
-  const { error } = await supabase.from('posts').delete().eq('id', id);
+  const { error } = await supabase.from('posts').update({status:'removed'}).eq('id', id).eq('author_id',user.id).eq('status','published');
   if (error) { notify('Không thể xóa bài: ' + error.message); return; }
   await loadPosts();
   notify('Đã xóa bài viết.');
@@ -189,8 +215,8 @@ const navItems = role === 'admin'
   : NAV;
 const current = navItems.find(n => n.id === page);
 return <div className="app"><aside className={'sidebar '+(drawer?'open':'')}><div className="brand" onClick={()=>go('home')}><div className="brand-icon"><HeartHandshake size={24}/></div><div><b>TICare<span>.</span></b><small>HIỂU ĐÚNG ĐỂ ĐỒNG HÀNH</small></div></div><div className="side-label">KHÔNG GIAN LÀM VIỆC</div><nav>{navItems.map(n=><button key={n.id} className={'nav-link '+(page===n.id?'active':'')} onClick={()=>go(n.id)}><n.icon size={19}/><span>{n.label}</span>{page===n.id&&<span className="active-dot"/>}</button>)}</nav><div className="side-bottom"><div className="privacy-note"><ShieldCheck size={20}/><div><b>Tôn trọng sự khác biệt</b><small>Không chẩn đoán y tế. Không lưu video camera mặc định.</small></div></div><div className="sidebar-version">TICare • Cộng đồng giáo dục</div></div></aside>{drawer&&<div className="shade" onClick={()=>setDrawer(false)}/>}
-<div className="workspace"><header className="topbar"><button className="icon-button mobile-menu" onClick={()=>setDrawer(true)}><Menu size={22}/></button><div className="breadcrumbs"><span>Không gian TICare</span><ChevronRight size={15}/><strong>{current?.label}</strong></div><div className="top-actions">{motionRunning&&<button className="btn btn-outline small" onClick={()=>go('motion')}><Camera size={15}/> Đang quan sát</button>}<button className="icon-button" title="Thông báo Motion Insight" onClick={()=>setMotionPanel(v=>!v)}><Bell size={19}/>{motionEvents.length>0&&<span className="motion-count">{motionEvents.length}</span>}</button><span className={'mode-pill '+(live?'online':'')}><span className="status-dot"/>{live?'Đã cấu hình Supabase':'Chưa cấu hình Supabase'}</span>{user?<button className="account" onClick={signOut}><UserRound size={17}/><span>{user.user_metadata?.display_name||user.name||user.email?.split('@')[0]}</span><LogOut size={15}/></button>:<button className="btn btn-outline small" onClick={()=>setAuthOpen(true)}><LogIn size={16}/> Đăng nhập</button>}</div></header>
-<main className="main">{page==='home'&&<Home go={go} posts={posts}/ >}<div style={{display:page==='motion'?'block':'none'}}><Motion onRunningChange={setMotionRunning} onMotionEvent={onMotionEvent} stopToken={motionStopToken}/></div>{page==='community'&&<Community posts={posts} user={user} onPost={addPost} onComment={addComment} onReport={reportPost} onRemove={removePost} requireAuth={requireAuth} saved={saved} onToggleSave={toggleSaved} loading={loading} notify={notify}/ >}{page==='admin'&&role==='admin'&&<AdminPanel notify={notify} onRefreshPosts={loadPosts}/ >}{page==='assistant'&&<Assistant user={user} notify={notify}/ >}{page==='education'&&<Education/>}{page==='support'&&<Support/>}</main>{motionPanel&&<section className="motion-notification-panel"><div className="motion-notification-head"><b>Thông báo Motion Insight</b><button className="icon-button" onClick={()=>setMotionPanel(false)} aria-label="Đóng thông báo"><X size={17}/></button></div>{motionEvents.length===0?<p>Chưa có thông báo trong phiên này.</p>:<>{motionEvents.map(e=><div className={"motion-event "+e.level} key={e.id}><strong>{e.level==='warning'?'Cảnh báo tần suất cao':'Thông báo chuyển động lặp lại'}</strong><small>{new Date(e.time).toLocaleTimeString('vi-VN')} · {e.frequency} chu kỳ/phút (ước tính)</small><p>Chỉ là tín hiệu thử nghiệm, không xác định tic hoặc bệnh lý.</p></div>)}<button className="btn btn-outline small" onClick={()=>setMotionEvents([])}>Xóa lịch sử phiên</button></>}</section>}<footer className="footer">© 2026 TICare · Nền tảng thông tin và hỗ trợ giáo viên · Không thay thế đánh giá chuyên môn y tế</footer></div>{authOpen&&<AuthModal onClose={()=>setAuthOpen(false)} onSuccess={u=>{setUser(u);setAuthOpen(false);notify('Đăng nhập thành công!')}} notify={notify}/ >}{resetOpen&&<ResetPasswordModal onClose={()=>setResetOpen(false)} notify={notify}/>}{toast&&<div className="toast"><Info size={18}/>{toast}<button onClick={()=>setToast('')}><X size={16}/></button></div>}</div>}
+<div className="workspace"><header className="topbar"><button className="icon-button mobile-menu" onClick={()=>setDrawer(true)}><Menu size={22}/></button><div className="breadcrumbs"><span>Không gian TICare</span><ChevronRight size={15}/><strong>{current?.label}</strong></div><div className="top-actions">{motionRunning&&<button className="btn btn-outline small" onClick={()=>go('motion')}><Camera size={15}/> Đang quan sát</button>}<button className="icon-button" title="Thông báo Motion Insight" onClick={()=>setMotionPanel(v=>!v)}><Bell size={19}/>{motionEvents.length>0&&<span className="motion-count">{motionEvents.length}</span>}</button><span className={'mode-pill '+(live?'online':'')}><span className="status-dot"/>{live?'Đã cấu hình Supabase':'Chưa cấu hình Supabase'}</span>{user?<><button className="icon-button" title="Hồ sơ cá nhân" onClick={()=>setProfileOpen(true)}><UserRound size={19}/></button><button className="account" onClick={signOut}><UserRound size={17}/><span>{profile?.display_name||user.user_metadata?.display_name||user.email?.split('@')[0]}</span><LogOut size={15}/></button></>:<button className="btn btn-outline small" onClick={()=>setAuthOpen(true)}><LogIn size={16}/> Đăng nhập</button>}</div></header>
+<main className="main">{page==='home'&&<Home go={go} posts={posts}/ >}<div style={{display:page==='motion'?'block':'none'}}><Motion onRunningChange={setMotionRunning} onMotionEvent={onMotionEvent} stopToken={motionStopToken}/></div>{page==='community'&&<Community posts={posts} user={user} initialView={communityView} onPost={addPost} onComment={addComment} onReport={reportPost} onRemove={removePost} onEditPost={updatePost} onOpenProfile={()=>setProfileOpen(true)} requireAuth={requireAuth} saved={saved} onToggleSave={toggleSaved} loading={loading} notify={notify}/ >}{page==='admin'&&role==='admin'&&<AdminPanel notify={notify} onRefreshPosts={loadPosts}/ >}{page==='assistant'&&<Assistant user={user} notify={notify}/ >}{page==='education'&&<Education/>}{page==='support'&&<Support/>}</main>{motionPanel&&<section className="motion-notification-panel"><div className="motion-notification-head"><b>Thông báo Motion Insight</b><button className="icon-button" onClick={()=>setMotionPanel(false)} aria-label="Đóng thông báo"><X size={17}/></button></div>{motionEvents.length===0?<p>Chưa có thông báo trong phiên này.</p>:<>{motionEvents.map(e=><div className={"motion-event "+e.level} key={e.id}><strong>{e.level==='warning'?'Cảnh báo tần suất cao':'Thông báo chuyển động lặp lại'}</strong><small>{new Date(e.time).toLocaleTimeString('vi-VN')} · {e.frequency} chu kỳ/phút (ước tính)</small><p>Chỉ là tín hiệu thử nghiệm, không xác định tic hoặc bệnh lý.</p></div>)}<button className="btn btn-outline small" onClick={()=>setMotionEvents([])}>Xóa lịch sử phiên</button></>}</section>}<footer className="footer">© 2026 TICare · Nền tảng thông tin và hỗ trợ giáo viên · Không thay thế đánh giá chuyên môn y tế</footer></div>{authOpen&&<AuthModal onClose={()=>setAuthOpen(false)} onSuccess={u=>{setUser(u);setAuthOpen(false);notify('Đăng nhập thành công!')}} notify={notify}/ >}{profileOpen&&user&&<ProfileModal profile={profile} user={user} posts={posts} saved={saved} onClose={()=>setProfileOpen(false)} onUpdate={updateProfile} onGoMyPosts={()=>{setProfileOpen(false);setCommunityView('mine');go('community');}}/>}{resetOpen&&<ResetPasswordModal onClose={()=>setResetOpen(false)} notify={notify}/>}{toast&&<div className="toast"><Info size={18}/>{toast}<button onClick={()=>setToast('')}><X size={16}/></button></div>}</div>}
 function Heading({eyebrow,title,desc,action}){return <div className="page-heading"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1>{desc&&<p>{desc}</p>}</div>{action}</div>}
 function Home({go,posts}){return <><div className="hero"><div className="hero-content"><span className="hero-tag"><span className="glow-dot"/> NỀN TẢNG GIÁO DỤC HÒA NHẬP</span><h1>Hiểu đúng để<br/><em>đồng hành tốt hơn.</em></h1><p>TICare kết nối công nghệ, tri thức và sự thấu cảm — hỗ trợ giáo viên tạo nên một lớp học nơi mỗi sự khác biệt đều được tôn trọng.</p><div className="hero-buttons"><button className="btn btn-mint" onClick={()=>go('assistant')}>Khám phá trợ lý AI <ArrowRight size={17}/></button><button className="btn btn-ghost" onClick={()=>go('motion')}>Thử camera <ScanEye size={17}/></button></div></div><div className="hero-art"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="heart-core"><HeartHandshake size={70} strokeWidth={1.4}/></div><div className="floating f1"><BookOpen size={19}/> Kiến thức</div><div className="floating f2"><UsersRound size={19}/> Cộng đồng</div><div className="floating f3"><Activity size={19}/> Công nghệ</div></div></div><div className="section-row"><div><h2>Khám phá TICare</h2><p>Mọi công cụ cần thiết, trong một không gian thống nhất.</p></div></div><div className="feature-grid">{[{id:'motion',icon:ScanEye,color:'teal',title:'Quan sát vận động',desc:'Camera nhận diện điểm khớp và mô tả tín hiệu chuyển động lặp lại.'},{id:'community',icon:UsersRound,color:'blue',title:'Cộng đồng giáo dục',desc:'Chia sẻ bài viết, tài liệu và kinh nghiệm hỗ trợ học sinh.'},{id:'assistant',icon:Bot,color:'violet',title:'Trợ lý thông tin AI',desc:'Tra cứu, diễn giải tiếng Việt và dẫn nguồn kiến thức về tic.'},{id:'education',icon:GraduationCap,color:'amber',title:'Giáo dục hòa nhập',desc:'Bài học và hoạt động lan tỏa sự cảm thông.'},{id:'support',icon:HandHeart,color:'pink',title:'Góc đồng hành',desc:'Gợi ý ứng xử và phối hợp hỗ trợ trong lớp học.'}].map(x=><button className="feature-card" key={x.id} onClick={()=>go(x.id)}><div className={'feature-icon '+x.color}><x.icon size={24}/></div><h3>{x.title}</h3><p>{x.desc}</p><span>Khám phá <ArrowRight size={15}/></span></button>)}</div><div className="home-lower"><div className="panel"><div className="panel-title"><h3>Bài viết mới từ cộng đồng</h3><button className="link-button" onClick={()=>go('community')}>Xem tất cả <ArrowRight size={15}/></button></div>{posts.slice(0,3).map(p=><div className="compact-post" key={p.id}><span className="post-category">{p.category}</span><b>{p.title}</b><small>{p.author} · {fmt(p.created_at)}</small></div>)}</div><div className="panel tip-panel"><div className="tip-icon"><Heart size={24}/></div><h3>Một lời nhắc nhỏ</h3><p>Không phải mọi chuyển động lặp lại đều là tic. Một công cụ quan sát chỉ có thể hỗ trợ mô tả chuyển động — không thể thay thế đánh giá của chuyên gia.</p><button className="link-button" onClick={()=>go('education')}>Tìm hiểu thêm <ArrowRight size={15}/></button></div></div></>}
 
@@ -646,113 +672,182 @@ function ResetPasswordModal({ onClose, notify }) {
   );
 }
 
-function Community({ posts, user, onPost, onComment, onReport, onRemove, requireAuth, saved, onToggleSave, loading, notify }) {
-  const [filter, setFilter] = useState('Tất cả');
-  const [query, setQuery] = useState('');
-  const [view, setView] = useState('all');
-  const [sort, setSort] = useState('newest');
-  const [compose, setCompose] = useState(false);
-  const [selected, setSelected] = useState(null);
-  const [report, setReport] = useState(null);
+function Community({ posts, user, initialView,  onPost, onComment, onReport, onRemove, onEditPost, onOpenProfile, requireAuth, saved, onToggleSave, loading, notify }) {
+  const [filter,setFilter] = useState('Tất cả');
+  const [query,setQuery] = useState('');
+  const [view,setView] = useState(initialView || 'all');
+  const [sort,setSort] = useState('newest');
+  const [shown,setShown] = useState(10);
+  const [compose,setCompose] = useState(false);
+  const [editing,setEditing] = useState(null);
+  const [selected,setSelected] = useState(null);
+  const [report,setReport] = useState(null);
   const categories = ['Tất cả','Kiến thức về tic','Tài nguyên giáo dục','Tình huống lớp học','Kinh nghiệm chia sẻ'];
-  const visible = posts.filter(p =>
-    (view === 'all' || saved.includes(p.id)) &&
-    (filter === 'Tất cả' || p.category === filter) &&
+  useEffect(()=>{setShown(10)},[filter,query,view,sort]);
+  useEffect(()=>setView(initialView||'all'),[initialView]);
+  useEffect(()=>{if(!user && view!=='all')setView('all')},[user,view]);
+  const visible=posts.filter(p=>
+    (view==='all'||(view==='saved'&&saved.includes(p.id))||(view==='mine'&&user&&p.author_id===user.id))&&
+    (filter==='Tất cả'||p.category===filter)&&
     `${p.title} ${p.body} ${p.author}`.toLowerCase().includes(query.toLowerCase())
-  ).sort((a,b) => sort === 'newest'
-    ? new Date(b.created_at) - new Date(a.created_at)
-    : new Date(a.created_at) - new Date(b.created_at));
+  ).sort((a,b)=>sort==='newest'?new Date(b.created_at)-new Date(a.created_at):new Date(a.created_at)-new Date(b.created_at));
+  const pageItems=visible.slice(0,shown);
+  const changeView=v=>{if(v!=='all'&&!requireAuth())return;setView(v)};
   return <>
     <Heading eyebrow="KHÔNG GIAN CHIA SẺ" title="Cộng đồng TICare"
-      desc="Chia sẻ tài liệu, kiến thức và kinh nghiệm về giáo dục hòa nhập."
-      action={<button className="btn btn-primary" onClick={() => { if(requireAuth()) setCompose(true); }}><Plus size={18}/> Viết bài mới</button>} />
+      desc="Kết nối giáo viên, chia sẻ tài liệu và câu chuyện giáo dục hòa nhập."
+      action={<button className="btn btn-primary" onClick={()=>{if(requireAuth())setCompose(true)}}><Plus size={18}/> Viết bài mới</button>}/>
     <div className="community-layout"><div>
-      <div className="community-toolbar" style={{flexWrap:'wrap'}}>
-        <div className="search-field"><Search size={18}/><input placeholder="Tìm bài viết..." value={query} onChange={e=>setQuery(e.target.value)}/></div>
-        <div className="filter-pills">
-          <button className={view==='all'?'on':''} onClick={()=>setView('all')}>Tất cả bài viết</button>
-          <button className={view==='saved'?'on':''} onClick={()=>{if(requireAuth())setView('saved')}}><Bookmark size={15}/> Đã lưu ({saved.length})</button>
+      <div className="panel" style={{marginBottom:16,padding:18,borderRadius:16}}>
+        <div style={{display:'flex',gap:12,alignItems:'center',flexWrap:'wrap',justifyContent:'space-between'}}>
+          <div><b style={{fontSize:17}}>Cùng chia sẻ điều hữu ích</b><p className="small-text muted" style={{margin:'6px 0 0'}}>Bắt đầu từ kiến thức đúng và những trải nghiệm tích cực.</p></div>
+          <button className="btn btn-outline small" onClick={()=>{if(requireAuth())onOpenProfile()}}><UserRound size={16}/> Hồ sơ của tôi</button>
         </div>
-        <label style={{display:'flex',alignItems:'center',gap:8,fontSize:13}}>
-          Sắp xếp:
-          <select value={sort} onChange={e=>setSort(e.target.value)}>
-            <option value="newest">Mới nhất</option><option value="oldest">Cũ nhất</option>
-          </select>
+      </div>
+      <div className="community-toolbar" style={{flexWrap:'wrap',gap:12}}>
+        <div className="search-field"><Search size={18}/><input aria-label="Tìm bài viết" placeholder="Tìm bài viết, chủ đề, tác giả..." value={query} onChange={e=>setQuery(e.target.value)}/></div>
+        <label className="small-text muted" style={{display:'flex',alignItems:'center',gap:8}}>Sắp xếp
+          <select value={sort} onChange={e=>setSort(e.target.value)}><option value="newest">Mới nhất</option><option value="oldest">Cũ nhất</option></select>
         </label>
       </div>
-      <div className="filter-pills" style={{marginBottom:18}}>
+      <div className="filter-pills" style={{margin:'12px 0 14px',flexWrap:'wrap'}}>
+        <button className={view==='all'?'on':''} onClick={()=>changeView('all')}><UsersRound size={15}/> Tất cả</button>
+        <button className={view==='saved'?'on':''} onClick={()=>changeView('saved')}><Bookmark size={15}/> Đã lưu ({saved.length})</button>
+        <button className={view==='mine'?'on':''} onClick={()=>changeView('mine')}><FileText size={15}/> Bài của tôi</button>
+      </div>
+      <div className="filter-pills" style={{marginBottom:18,flexWrap:'wrap'}}>
         {categories.map(c=><button key={c} className={filter===c?'on':''} onClick={()=>setFilter(c)}>{c}</button>)}
       </div>
+      <div className="small-text muted" style={{marginBottom:12}}>Hiển thị {Math.min(shown,visible.length)} / {visible.length} bài phù hợp</div>
       <div className="posts-list">
-        {visible.length===0&&<div className="empty">{view==='saved'?'Chưa có bài đã lưu phù hợp.':'Chưa tìm thấy bài viết phù hợp.'}</div>}
-        {visible.map(p=><article className="post-card" key={p.id}>
+        {visible.length===0&&<div className="empty">{view==='mine'?'Bạn chưa có bài đăng phù hợp.':view==='saved'?'Chưa có bài đã lưu phù hợp.':'Chưa tìm thấy bài viết phù hợp.'}</div>}
+        {pageItems.map(p=><article className="post-card" key={p.id}>
           <div className="post-head"><div className="avatar">{(p.author||'T')[0].toUpperCase()}</div>
             <div><b>{p.author||'Thành viên'}</b><small>{fmt(p.created_at)} · <span className="post-category">{p.category}</span></small></div>
-            {user&&p.author_id===user.id&&<button className="icon-button danger" title="Xóa bài" onClick={()=>onRemove(p.id)}><Trash2 size={17}/></button>}
+            {user&&p.author_id===user.id&&<div style={{display:'flex',gap:4,marginLeft:'auto'}}>
+              <button className="icon-button" title="Sửa bài" onClick={()=>setEditing(p)}><FileText size={17}/></button>
+              <button className="icon-button danger" title="Xóa bài" onClick={()=>onRemove(p.id)}><Trash2 size={17}/></button>
+            </div>}
           </div>
           <h3>{p.title}</h3><p className="post-preview">{p.body}</p>
           {p.attachment&&<div className="attachment"><Paperclip size={16}/>{p.attachment.filename||p.attachment.name}</div>}
-          <div className="post-actions">
+          <div className="post-actions" style={{flexWrap:'wrap'}}>
             <button onClick={()=>setSelected(p)}><MessageCircle size={17}/> Bình luận</button>
-            <button onClick={()=>onToggleSave(p.id)}><Bookmark size={17} fill={saved.includes(p.id)?'currentColor':'none'}/> {saved.includes(p.id)?'Bỏ lưu':'Lưu bài'}</button>
+            <button onClick={()=>onToggleSave(p.id)}><Bookmark size={17} fill={saved.includes(p.id)?'currentColor':'none'}/> {saved.includes(p.id)?'Đã lưu':'Lưu bài'}</button>
             <button onClick={()=>{if(requireAuth())setReport(p)}}><Flag size={17}/> Báo cáo</button>
             <button className="readmore" onClick={()=>setSelected(p)}>Đọc tiếp <ArrowRight size={16}/></button>
           </div>
         </article>)}
+        {shown<visible.length&&<div style={{textAlign:'center',margin:'18px 0 10px'}}>
+          <button className="btn btn-outline" onClick={()=>setShown(n=>n+10)}>Xem thêm 10 bài <ChevronRight size={17}/></button>
+        </div>}
       </div>
     </div>
     <aside className="community-aside">
-      <div className="panel"><div className="side-panel-icon"><UsersRound size={22}/></div><h3>Cộng đồng TICare</h3>
-        <p>Cùng chia sẻ tri thức và hỗ trợ lớp học hòa nhập.</p>
-        <div className="stat-row"><b>{posts.length}</b><span>bài viết đang hiển thị</span></div>
-        <div className="stat-row"><b>{categories.length-1}</b><span>chủ đề</span></div>
+      <div className="panel"><div className="side-panel-icon"><UsersRound size={22}/></div><h3>Góc cộng đồng</h3>
+        <p>Một nơi để học hỏi và cùng xây dựng lớp học tôn trọng sự khác biệt.</p>
+        <div className="stat-row"><b>{posts.length}</b><span>bài đã tải</span></div>
+        {user&&<><button className="link-button" onClick={()=>changeView('mine')}><FileText size={16}/> Bài viết của tôi</button><button className="link-button" onClick={()=>changeView('saved')}><Bookmark size={16}/> Bài đã lưu</button></>}
       </div>
       <div className="panel rule-panel"><h3><ShieldCheck size={18}/> Nguyên tắc chia sẻ</h3>
-        <p>Không tiết lộ danh tính hoặc thông tin sức khỏe của học sinh; không đưa ra chẩn đoán.</p>
-        <p>Nội dung cộng đồng do thành viên đăng tải, không mặc nhiên được TICare xác thực.</p>
+        <p>Không đăng danh tính, hình ảnh hoặc thông tin sức khỏe riêng tư của học sinh khi chưa có sự cho phép phù hợp.</p>
+        <p>Chia sẻ kiến thức có nguồn, không tự chẩn đoán hay kỳ thị người khác.</p>
       </div>
     </aside></div>
-    {compose&&<ComposeModal onClose={()=>setCompose(false)} onPost={onPost} loading={loading}/ >}
-    {selected&&<PostModal post={posts.find(p=>p.id===selected.id)||selected} onClose={()=>setSelected(null)} onComment={onComment} requireAuth={requireAuth} notify={notify}/ >}
-    {report&&<ReportModal post={report} onClose={()=>setReport(null)} onSubmit={onReport}/ >}
+    {compose&&<ComposeModal onClose={()=>setCompose(false)} onPost={onPost} loading={loading}/>}
+    {editing&&<EditPostModal post={editing} onClose={()=>setEditing(null)} onSave={onEditPost}/>}
+    {selected&&<PostModal post={posts.find(p=>p.id===selected.id)||selected} user={user} onClose={()=>setSelected(null)} onComment={onComment} requireAuth={requireAuth} notify={notify}/>}
+    {report&&<ReportModal post={report} onClose={()=>setReport(null)} onSubmit={onReport}/>}
   </>;
 }
+
+function EditPostModal({post,onClose,onSave}) {
+  const [title,setTitle]=useState(post.title);
+  const [body,setBody]=useState(post.body);
+  const [category,setCategory]=useState(post.category);
+  const [busy,setBusy]=useState(false);
+  async function submit(e) {
+    e.preventDefault();if(busy)return;setBusy(true);
+    try {if(await onSave(post.id,{title,body,category}))onClose()}
+    finally {setBusy(false)}
+  }
+  return <div className="modal-backdrop"><div className="modal compose-modal">
+    <button className="close" onClick={onClose} disabled={busy}><X/></button>
+    <h2>Chỉnh sửa bài viết</h2><p>Chỉ bạn mới có thể chỉnh sửa bài viết này.</p>
+    <form className="form-stack" onSubmit={submit}>
+      <label>Tiêu đề<input required minLength={3} maxLength={150} value={title} onChange={e=>setTitle(e.target.value)}/></label>
+      <label>Chủ đề<select value={category} onChange={e=>setCategory(e.target.value)}>{['Kiến thức về tic','Tài nguyên giáo dục','Tình huống lớp học','Kinh nghiệm chia sẻ'].map(c=><option key={c}>{c}</option>)}</select></label>
+      <label>Nội dung<textarea required minLength={5} maxLength={20000} rows={8} value={body} onChange={e=>setBody(e.target.value)}/></label>
+      <p className="small-text muted">Tệp đính kèm hiện có được giữ nguyên.</p>
+      <button className="btn btn-primary full" disabled={busy}>{busy?'Đang lưu...':'Lưu thay đổi'} <CheckCircle2 size={17}/></button>
+    </form>
+  </div></div>;
+}
+
+function ProfileModal({profile,user,posts,saved,onClose,onUpdate,onGoMyPosts}) {
+  const [name,setName]=useState(profile?.display_name||user.user_metadata?.display_name||'');
+  const [busy,setBusy]=useState(false);
+  async function save(e){e.preventDefault();if(busy)return;setBusy(true);try{if(await onUpdate(name))onClose()}finally{setBusy(false)}}
+  const myCount=posts.filter(p=>p.author_id===user.id).length;
+  return <div className="modal-backdrop"><div className="modal auth-modal">
+    <button className="close" onClick={onClose}><X size={20}/></button>
+    <div className="auth-logo"><UserRound size={25}/></div><h2>Hồ sơ của tôi</h2>
+    <p className="small-text muted">Tài khoản: {user.email}</p>
+    <div style={{display:'flex',gap:12,margin:'16px 0'}}>
+      <div className="panel" style={{flex:1,textAlign:'center',padding:12}}><b>{myCount}</b><div className="small-text muted">Bài đã đăng</div></div>
+      <div className="panel" style={{flex:1,textAlign:'center',padding:12}}><b>{saved.length}</b><div className="small-text muted">Bài đã lưu</div></div>
+    </div>
+    <form className="form-stack" onSubmit={save}><label>Tên hiển thị<input required maxLength={60} value={name} onChange={e=>setName(e.target.value)}/></label>
+      <button className="btn btn-primary full" disabled={busy}>{busy?'Đang lưu...':'Lưu tên hiển thị'}</button></form>
+    <button className="btn btn-outline full" style={{marginTop:12}} onClick={onGoMyPosts}>Xem bài viết của tôi <ArrowRight size={17}/></button>
+    <p className="small-text muted" style={{marginTop:14}}>TICare chỉ hiển thị tên công khai, không công bố email của bạn trên bài viết.</p>
+  </div></div>;
+}
+
 function ComposeModal({onClose,onPost,loading}){const[title,setTitle]=useState(''),[body,setBody]=useState(''),[category,setCategory]=useState('Tài nguyên giáo dục'),[file,setFile]=useState(null);async function submit(e){e.preventDefault();if(!title.trim()||!body.trim())return;const ok=await onPost({title:title.trim(),body:body.trim(),category},file);if(ok)onClose()}return <div className="modal-backdrop"><div className="modal compose-modal"><button className="close" onClick={onClose}><X/></button><h2>Chia sẻ cùng cộng đồng</h2><p>Những tài liệu nhỏ có thể tạo nên thay đổi lớn.</p><form onSubmit={submit} className="form-stack"><label>Tiêu đề<input required maxLength={150} value={title} onChange={e=>setTitle(e.target.value)} placeholder="Đặt tiêu đề dễ hiểu..."/></label><label>Chủ đề<select value={category} onChange={e=>setCategory(e.target.value)}>{['Kiến thức về tic','Tài nguyên giáo dục','Tình huống lớp học','Kinh nghiệm chia sẻ'].map(x=><option key={x}>{x}</option>)}</select></label><label>Nội dung<textarea required rows={8} value={body} onChange={e=>setBody(e.target.value)} placeholder="Chia sẻ bài học, hoạt động, kinh nghiệm... (không đăng dữ liệu riêng tư của học sinh)"/></label><label className="file-input"><Paperclip size={18}/> {file?file.name:'Đính kèm PDF, DOCX, PPTX hoặc ảnh'}<input type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,image/png,image/jpeg,image/webp" onChange={e=>setFile(e.target.files[0]||null)}/></label><div className="muted small-text">Giới hạn tệp: 8 MB. Không tải thông tin riêng tư của học sinh. Bài đăng công khai sau khi gửi.</div><button disabled={loading} className="btn btn-primary full">{loading?'Đang đăng...':'Đăng bài viết'} <Send size={16}/></button></form></div></div>}
-function PostModal({post,onClose,onComment,requireAuth,notify}) {
-  const [text,setText] = useState('');
-  const [comments,setComments] = useState([]);
-  const [loading,setLoading] = useState(true);
-  const [sending,setSending] = useState(false);
+function PostModal({post,user,onClose,onComment,requireAuth,notify}) {
+  const [text,setText]=useState('');
+  const [comments,setComments]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [sending,setSending]=useState(false);
+  const [editId,setEditId]=useState(null);
+  const [editBody,setEditBody]=useState('');
+  const [busyId,setBusyId]=useState(null);
   async function loadComments() {
-    if (!supabase) { setLoading(false); return; }
+    if(!supabase){setLoading(false);return}
     setLoading(true);
-    const {data,error} = await supabase.from('comments')
-      .select('id,author_id,body,created_at').eq('post_id',post.id)
-      .order('created_at',{ascending:true});
-    if (error) {notify('Không thể tải bình luận: '+error.message);setLoading(false);return;}
-    const ids = [...new Set((data||[]).map(x=>x.author_id).filter(Boolean))];
-    let names = {};
-    if (ids.length) {
-      const result = await supabase.from('profiles').select('id,display_name').in('id',ids);
-      names = Object.fromEntries((result.data||[]).map(x=>[x.id,x.display_name]));
-    }
-    setComments((data||[]).map(x=>({...x,author:names[x.author_id]||'Thành viên'})));
+    const {data,error}=await supabase.from('comments').select('id,author_id,body,created_at')
+      .eq('post_id',post.id).order('created_at',{ascending:true}).limit(300);
+    if(error){notify('Không thể tải bình luận: '+error.message);setLoading(false);return}
+    const ids=[...new Set((data||[]).map(x=>x.author_id).filter(Boolean))];
+    let names={};
+    if(ids.length){const r=await supabase.from('profiles').select('id,display_name').in('id',ids);names=Object.fromEntries((r.data||[]).map(p=>[p.id,p.display_name]))}
+    setComments((data||[]).map(c=>({...c,author:names[c.author_id]||'Thành viên'})));
     setLoading(false);
   }
   useEffect(()=>{loadComments()},[post.id]);
-  async function submit(e) {
-    e.preventDefault();
-    if (!text.trim()||sending||!requireAuth()) return;
-    setSending(true);
-    const ok = await onComment(post.id,text.trim());
-    if (ok) {setText('');await loadComments();}
-    setSending(false);
+  async function submit(e){e.preventDefault();if(!text.trim()||sending||!requireAuth())return;setSending(true);
+    try{if(await onComment(post.id,text.trim())){setText('');await loadComments()}}finally{setSending(false)}}
+  async function saveComment(c){
+    if(!user||c.author_id!==user.id||!editBody.trim())return;
+    setBusyId(c.id);
+    const {error}=await supabase.from('comments').update({body:editBody.trim()}).eq('id',c.id).eq('author_id',user.id);
+    if(error)notify('Không thể sửa bình luận: '+error.message);
+    else{setEditId(null);await loadComments();notify('Đã sửa bình luận.');}
+    setBusyId(null);
   }
-  async function download() {
-    if (!post.attachment?.storage_path) return;
-    const {data,error} = await supabase.storage.from('community-files')
-      .createSignedUrl(post.attachment.storage_path,60);
-    if (error) {notify('Không thể mở tài liệu: '+error.message);return;}
+  async function deleteComment(c){
+    if(!user||c.author_id!==user.id||!window.confirm('Xóa bình luận của bạn?'))return;
+    setBusyId(c.id);
+    const {error}=await supabase.from('comments').delete().eq('id',c.id).eq('author_id',user.id);
+    if(error)notify('Không thể xóa bình luận: '+error.message);
+    else{await loadComments();notify('Đã xóa bình luận.');}
+    setBusyId(null);
+  }
+  async function download(){
+    if(!post.attachment?.storage_path)return;
+    const {data,error}=await supabase.storage.from('community-files').createSignedUrl(post.attachment.storage_path,60);
+    if(error){notify('Không thể mở tài liệu: '+error.message);return}
     window.open(data.signedUrl,'_blank','noopener,noreferrer');
   }
   return <div className="modal-backdrop"><div className="modal post-modal">
@@ -762,11 +857,22 @@ function PostModal({post,onClose,onComment,requireAuth,notify}) {
     <div className="post-full">{post.body}</div>
     {post.attachment&&<button className="attachment attachment-button" onClick={download}><Download size={17}/>{post.attachment.filename||post.attachment.name}</button>}
     <div className="comment-section"><h3>Bình luận ({comments.length})</h3>
-      {loading?<p>Đang tải bình luận...</p>:
-        comments.length===0?<p>Chưa có bình luận nào. Hãy mở đầu cuộc thảo luận!</p>:
-        comments.map(c=><div className="comment" key={c.id}><b>{c.author}</b><small> · {fmt(c.created_at)}</small><p>{c.body}</p></div>)}
+      {loading?<p>Đang tải bình luận...</p>:comments.length===0?<p>Chưa có bình luận nào.</p>:
+        comments.map(c=><div className="comment" key={c.id} style={{padding:'12px 0'}}>
+          <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+            <span><b>{c.author}</b> <small> · {fmt(c.created_at)}</small></span>
+            {user&&c.author_id===user.id&&<div style={{display:'flex',gap:8}}>
+              <button type="button" className="link-button" onClick={()=>{setEditId(c.id);setEditBody(c.body)}} disabled={busyId===c.id}><FileText size={14}/> Sửa</button>
+              <button type="button" className="link-button" onClick={()=>deleteComment(c)} disabled={busyId===c.id}><Trash2 size={14}/> Xóa</button>
+            </div>}
+          </div>
+          {editId===c.id?<div className="form-stack" style={{marginTop:8}}>
+            <textarea rows={3} maxLength={3000} value={editBody} onChange={e=>setEditBody(e.target.value)}/>
+            <div style={{display:'flex',gap:8}}><button className="btn btn-primary small" onClick={()=>saveComment(c)} disabled={!editBody.trim()||busyId===c.id}>Lưu</button><button className="btn btn-outline small" onClick={()=>setEditId(null)}>Hủy</button></div>
+          </div>:<p style={{whiteSpace:'pre-wrap'}}>{c.body}</p>}
+        </div>)}
       <form onSubmit={submit} className="comment-form">
-        <input maxLength={3000} value={text} onChange={e=>setText(e.target.value)} placeholder="Viết bình luận tích cực..."/>
+        <input maxLength={3000} value={text} onChange={e=>setText(e.target.value)} placeholder="Viết bình luận tôn trọng và tích cực..."/>
         <button className="btn btn-primary" disabled={!text.trim()||sending}><Send size={16}/></button>
       </form>
     </div>
@@ -794,46 +900,54 @@ function ReportModal({post,onClose,onSubmit}) {
 }
 
 function AdminPanel({notify,onRefreshPosts}) {
-  const [items,setItems] = useState([]);
-  const [busy,setBusy] = useState(null);
-  const [filter,setFilter] = useState('pending');
-  const [loading,setLoading] = useState(true);
-  async function reload() {
+  const [items,setItems]=useState([]);
+  const [busy,setBusy]=useState(null);
+  const [filter,setFilter]=useState('pending');
+  const [loading,setLoading]=useState(true);
+  const [limit,setLimit]=useState(15);
+  const [query,setQuery]=useState('');
+  useEffect(()=>{setLimit(15)},[filter,query]);
+  async function reload(){
     setLoading(true);
-    const {data,error} = await supabase.from('reports')
+    const {data,error}=await supabase.from('reports')
       .select('id,post_id,reporter_id,reason,status,created_at,posts(id,title,body,status)')
-      .order('created_at',{ascending:false}).limit(200);
+      .order('created_at',{ascending:false}).limit(500);
     if(error)notify('Không thể tải báo cáo: '+error.message);
     else setItems(data||[]);
     setLoading(false);
   }
   useEffect(()=>{reload()},[]);
-  async function handle(item,action) {
+  async function handle(item,action){
     setBusy(item.id);
-    try {
-      if(action==='hide'||action==='restore') {
-        const status = action==='hide'?'hidden':'published';
-        const {error} = await supabase.from('posts').update({status}).eq('id',item.post_id);
+    try{
+      if(action==='hide'||action==='restore'){
+        const status=action==='hide'?'hidden':'published';
+        const {error}=await supabase.from('posts').update({status}).eq('id',item.post_id);
         if(error)throw error;
       }
-      if(action==='hide'||action==='dismiss') {
-        const {error} = await supabase.from('reports')
+      if(action==='hide'||action==='dismiss'){
+        const {error}=await supabase.from('reports')
           .update({status:action==='hide'?'reviewed':'dismissed'}).eq('id',item.id);
         if(error)throw error;
       }
-      await reload();
-      await onRefreshPosts();
+      await reload();await onRefreshPosts();
       notify(action==='hide'?'Đã ẩn bài và xử lý báo cáo.':action==='restore'?'Đã khôi phục bài viết.':'Đã bác bỏ báo cáo.');
-    }catch(error){console.error(error);notify('Không thể xử lý: '+error.message);}
-    finally{setBusy(null);}
+    }catch(e){console.error(e);notify('Không thể xử lý: '+e.message)}finally{setBusy(null)}
   }
-  const visible=items.filter(x=>filter==='all'||x.status===filter);
+  const counts={pending:items.filter(x=>x.status==='pending').length,reviewed:items.filter(x=>x.status==='reviewed').length,dismissed:items.filter(x=>x.status==='dismissed').length};
+  const visible=items.filter(x=>(filter==='all'||x.status===filter)&&`${x.posts?.title||''} ${x.reason}`.toLowerCase().includes(query.toLowerCase()));
   return <>
     <Heading eyebrow="DÀNH CHO QUẢN TRỊ VIÊN" title="Kiểm duyệt cộng đồng"
-      desc="Xem báo cáo, ẩn bài vi phạm hoặc bác bỏ báo cáo. Mọi quyết định đều có thể rà soát." />
+      desc="Quản lý báo cáo và quyết định ẩn hoặc khôi phục bài viết. Lịch sử vẫn được giữ lại."/>
     <div className="panel" style={{marginBottom:18}}>
+      <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:14}}>
+        <div className="stat-row" style={{flex:1,minWidth:110}}><b>{counts.pending}</b><span>Chờ xử lý</span></div>
+        <div className="stat-row" style={{flex:1,minWidth:110}}><b>{counts.reviewed}</b><span>Đã xử lý</span></div>
+        <div className="stat-row" style={{flex:1,minWidth:110}}><b>{counts.dismissed}</b><span>Đã bác bỏ</span></div>
+      </div>
+      <div className="search-field" style={{marginBottom:12}}><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Tìm theo tiêu đề, lý do báo cáo..."/></div>
       <div className="filter-pills" style={{display:'flex',flexWrap:'wrap',alignItems:'center'}}>
-        <button className={filter==='pending'?'on':''} onClick={()=>setFilter('pending')}>Chờ xử lý ({items.filter(x=>x.status==='pending').length})</button>
+        <button className={filter==='pending'?'on':''} onClick={()=>setFilter('pending')}>Đang chờ</button>
         <button className={filter==='reviewed'?'on':''} onClick={()=>setFilter('reviewed')}>Đã xử lý</button>
         <button className={filter==='dismissed'?'on':''} onClick={()=>setFilter('dismissed')}>Đã bác bỏ</button>
         <button className={filter==='all'?'on':''} onClick={()=>setFilter('all')}>Tất cả</button>
@@ -841,25 +955,25 @@ function AdminPanel({notify,onRefreshPosts}) {
       </div>
     </div>
     {loading&&<div className="panel">Đang tải báo cáo...</div>}
-    {!loading&&visible.length===0&&<div className="panel">Không có báo cáo trong mục này.</div>}
-    {!loading&&visible.map(item=><article className="post-card" key={item.id} style={{marginBottom:16}}>
-      <div className="post-head"><div className="avatar"><Flag size={18}/></div>
-        <div><b>{item.posts?.title||'Bài viết không còn tồn tại'}</b>
-          <small>{fmt(item.created_at)} · {item.status==='pending'?'Đang chờ':item.status==='reviewed'?'Đã xử lý':'Đã bác bỏ'}</small></div>
-      </div>
+    {!loading&&visible.length===0&&<div className="panel">Không có báo cáo phù hợp.</div>}
+    {!loading&&visible.slice(0,limit).map(item=><article className="post-card" key={item.id} style={{marginBottom:16}}>
+      <div className="post-head"><div className="avatar"><Flag size={18}/></div><div>
+        <b>{item.posts?.title||'Bài viết không còn tồn tại'}</b>
+        <small>{fmt(item.created_at)} · {item.status==='pending'?'Đang chờ':item.status==='reviewed'?'Đã xử lý':'Đã bác bỏ'}</small>
+      </div></div>
       <p><b>Lý do:</b> {item.reason}</p>
-      {item.posts&&<><p className="post-preview">{item.posts.body}</p>
-        <p className="small-text muted">Trạng thái bài: {item.posts.status==='hidden'?'Đang ẩn':item.posts.status==='published'?'Công khai':item.posts.status}</p>
+      {item.posts&&<><p className="post-preview">{item.posts.body}</p><p className="small-text muted">Trạng thái bài: {item.posts.status==='hidden'?'Đang ẩn':item.posts.status==='published'?'Công khai':item.posts.status}</p>
         <div className="post-actions" style={{flexWrap:'wrap'}}>
-          {item.posts.status==='published'&&<button disabled={busy===item.id} onClick={()=>{if(window.confirm('Ẩn bài viết này khỏi cộng đồng?'))handle(item,'hide')}}><Eye size={16}/> Ẩn bài & xử lý</button>}
-          {item.posts.status==='hidden'&&<button disabled={busy===item.id} onClick={()=>handle(item,'restore')}><RefreshCcw size={16}/> Khôi phục bài</button>}
-          {item.status==='pending'&&<button disabled={busy===item.id} onClick={()=>handle(item,'dismiss')}><CheckCircle2 size={16}/> Bác bỏ báo cáo</button>}
-        </div>
-      </>}
+          {item.posts.status==='published'&&<button disabled={!!busy} onClick={()=>{if(window.confirm('Ẩn bài viết này khỏi cộng đồng?'))handle(item,'hide')}}><Eye size={16}/> Ẩn bài & xử lý</button>}
+          {item.posts.status==='hidden'&&<button disabled={!!busy} onClick={()=>{if(window.confirm('Khôi phục bài công khai?'))handle(item,'restore')}}><RefreshCcw size={16}/> Khôi phục bài</button>}
+          {item.status==='pending'&&<button disabled={!!busy} onClick={()=>handle(item,'dismiss')}><CheckCircle2 size={16}/> Bác bỏ báo cáo</button>}
+        </div></>}
     </article>)}
-    <div className="panel rule-panel"><p><ShieldCheck size={17}/> Chỉ quản trị viên được phân quyền trên Supabase mới có quyền thay đổi trạng thái bài và báo cáo.</p></div>
+    {!loading&&limit<visible.length&&<div style={{textAlign:'center',marginBottom:20}}><button className="btn btn-outline" onClick={()=>setLimit(n=>n+15)}>Xem thêm 15 báo cáo</button></div>}
+    <div className="panel rule-panel"><p><ShieldCheck size={17}/> Chỉ admin mới có quyền thao tác. Báo cáo được giữ với trạng thái để phục vụ kiểm tra sau này.</p></div>
   </>;
 }
+
 function Assistant({user,notify}){const[question,setQuestion]=useState(''),[messages,setMessages]=useState([]),[busy,setBusy]=useState(false),[showTopics,setShowTopics]=useState(true);const bottom=useRef(null);useEffect(()=>{bottom.current?.scrollIntoView({behavior:'smooth'});},[messages,busy]);function ask(q){if(!q.trim()||busy)return;setQuestion('');const result=localAnswer(q);setMessages(p=>[...p,{role:'user',text:q},{role:'assistant',text:result.answer,sources:result.sources||[],mode:'demo',topic:result.topic,note:result.note}]);}return <><Heading eyebrow="THƯ VIỆN TRI THỨC · DEMO OFFLINE" title="Trợ lý kiến thức TICare" desc="Khám phá câu trả lời được biên soạn sẵn về tic và giáo dục hòa nhập. Không dùng API trả phí, không chẩn đoán."/><div className="assistant-shell"><div className="chat-main"><div className="chat-top"><div className="chat-avatar"><Bot size={22}/></div><div><b>TICare Knowledge Assistant</b><small>Thư viện trả lời theo chủ đề · Không phải AI trực tuyến</small></div><span className="chat-tag"><ShieldCheck size={13}/> Chế độ demo miễn phí</span></div><div style={{padding:'12px 18px',borderBottom:'1px solid #e2e8f0',display:'flex',gap:10,alignItems:'center',justifyContent:'space-between',flexWrap:'wrap'}}><span style={{fontSize:13,color:'#475569'}}>15 chủ đề kiến thức, không cần API key hoặc mật khẩu.</span><button type="button" className="btn btn-outline small" onClick={()=>setShowTopics(v=>!v)}>{showTopics?'Ẩn danh sách câu hỏi':'Hiện danh sách câu hỏi'}</button></div>{showTopics&&<div style={{padding:'14px 18px',borderBottom:'1px solid #e2e8f0',maxHeight:245,overflowY:'auto'}}>{TOPIC_GROUPS.map(group=><div key={group.title} style={{marginBottom:12}}><b style={{display:'block',fontSize:13,marginBottom:7}}>{group.title}</b><div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{group.ids.map(id=>{const t=QUESTION_BANK.find(x=>x.id===id);return t?<button key={id} type="button" className="btn btn-outline small" onClick={()=>ask(t.examples[0])} style={{whiteSpace:'normal',textAlign:'left'}}>{t.title}</button>:null})}</div></div>)}</div>}<div className="chat-history">{messages.length===0&&<div className="chat-welcome"><div className="big-bot"><Bot size={34}/></div><h2>Chào mừng đến thư viện TICare!</h2><p>Chọn câu hỏi mẫu hoặc nhập câu hỏi theo chủ đề. Đây là bản minh họa nội dung biên soạn, không tạo câu trả lời bằng AI.</p><div className="suggestions">{SUGGESTIONS.slice(0,6).map(s=><button key={s} onClick={()=>ask(s)}>{s}<ArrowRight size={14}/></button>)}</div></div>}{messages.map((m,i)=><div className={'chat-bubble-row '+m.role} key={i}>{m.role==='assistant'&&<div className="tiny-bot"><Bot size={17}/></div>}<div className={'chat-bubble '+m.role}><div className="chat-text" style={{whiteSpace:'pre-line'}}>{m.text}</div>{m.role==='assistant'&&<><div className="sources"><b><BookOpen size={15}/> Nguồn đọc thêm (không tra cứu trực tiếp)</b>{m.sources?.map((s,j)=><a key={j} href={s.url} target="_blank" rel="noreferrer"><ExternalLink size={13}/>{s.name||s.title||s.url}</a>)}</div><div className="answer-note">● Câu trả lời mẫu · {m.topic?m.topic+' · ':''}{m.note}</div></>}</div></div>)}<div ref={bottom}/></div><form className="chat-input" onSubmit={e=>{e.preventDefault();ask(question)}}><input value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Hỏi về tic, giáo dục hòa nhập, Motion Insight..."/><button disabled={!question.trim()} className="btn btn-primary"><Send size={18}/></button></form><div className="chat-disclaimer"><Info size={14}/> Trợ lý này hoạt động bằng thư viện câu trả lời mẫu, không gọi AI trực tuyến và không truy cập Internet. AI thực sự là hướng phát triển tương lai.</div></div><aside className="chat-side"><div className="panel"><h3>Nguyên tắc trả lời</h3><div className="principle"><CheckCircle2 size={17}/> Thông tin giáo dục bằng tiếng Việt</div><div className="principle"><CheckCircle2 size={17}/> Nguồn để tự đọc thêm</div><div className="principle"><CheckCircle2 size={17}/> Không chẩn đoán</div><div className="principle"><CheckCircle2 size={17}/> Không phân tích camera</div></div><div className="panel"><h3>Thư viện nguồn</h3>{SOURCES.map(s=><a className="source-link" href={s.url} key={s.url} target="_blank" rel="noreferrer"><BookOpen size={17}/><span>{s.name}</span><ExternalLink size={13}/></a>)}</div></aside></div></>}
 function Motion({onRunningChange,onMotionEvent,stopToken}){const video=useRef(null),canvas=useRef(null),landmarker=useRef(null),stream=useRef(null),frame=useRef(null),history=useRef([]),lastSample=useRef(0);const[running,setRunning]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[persons,setPersons]=useState(0),[signal,setSignal]=useState('Chưa có dữ liệu'),[frequency,setFrequency]=useState(null),[elapsed,setElapsed]=useState(0),[started,setStarted]=useState(0);const active=useRef(false),startTime=useRef(0),levelSince=useRef(null),lastAlert=useRef(-Infinity),currentLevel=useRef('normal'),eventCb=useRef(onMotionEvent),runningCb=useRef(onRunningChange);
 const [noticeThreshold,setNoticeThreshold]=useState(35),[warningThreshold,setWarningThreshold]=useState(85),[holdSeconds,setHoldSeconds]=useState(5),[cooldownSeconds,setCooldownSeconds]=useState(60),[systemNotifications,setSystemNotifications]=useState(false),[soundEnabled,setSoundEnabled]=useState(false);
