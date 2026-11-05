@@ -3,9 +3,9 @@ import {HeartHandshake,LayoutDashboard,ScanEye,UsersRound,Bot,GraduationCap,Hand
 import{SEED_POSTS,LESSONS,SOURCES,SUGGESTIONS,QUESTION_BANK,TOPIC_GROUPS,localAnswer}from './data';import{supabase,live}from './supabase';
 const NAV=[{id:'home',label:'Tổng quan',icon:LayoutDashboard},{id:'motion',label:'Quan sát vận động',icon:ScanEye},{id:'community',label:'Cộng đồng giáo dục',icon:UsersRound},{id:'assistant',label:'Trợ lý thông tin AI',icon:Bot},{id:'education',label:'Giáo dục hòa nhập',icon:GraduationCap},{id:'support',label:'Góc đồng hành',icon:HandHeart}];
 const uid=()=>crypto.randomUUID();const fmt=t=>new Date(t).toLocaleDateString('vi-VN');const read=(k,f)=>{try{return JSON.parse(localStorage.getItem(k))??f}catch{return f}};const store=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
-function App(){const[page,setPage]=useState('home'),[drawer,setDrawer]=useState(false),[user,setUser]=useState(null),[authOpen,setAuthOpen]=useState(false),[toast,setToast]=useState(''),[posts,setPosts]=useState(()=>read('ticare_posts',SEED_POSTS)),[saved,setSaved]=useState(()=>read('ticare_saved',[])),[reports,setReports]=useState(()=>read('ticare_reports',[])),[loading,setLoading]=useState(false);
+function App(){const[page,setPage]=useState('home'),[drawer,setDrawer]=useState(false),[user,setUser]=useState(null),[authOpen,setAuthOpen]=useState(false),[toast,setToast]=useState(''),[posts,setPosts]=useState([]),[saved,setSaved]=useState([]),[role,setRole]=useState('member'),[reports,setReports]=useState(()=>read('ticare_reports',[])),[loading,setLoading]=useState(false);
 const [resetOpen, setResetOpen] = useState(false);
-useEffect(()=>{store('ticare_posts',posts)},[posts]);useEffect(()=>{store('ticare_saved',saved)},[saved]);useEffect(()=>{store('ticare_reports',reports)},[reports]);
+useEffect(()=>{store('ticare_reports',reports)},[reports]);
 useEffect(() => {
   if (!supabase) {
     setUser(null);
@@ -33,6 +33,26 @@ useEffect(() => {
   };
 }, []);
 
+// Hồ sơ và danh sách đã lưu phụ thuộc vào tài khoản đang đăng nhập.
+useEffect(() => {
+  let valid = true;
+  setRole('member');
+  setSaved([]);
+  if (!supabase || !user?.id) return;
+  async function loadAccountData() {
+    const [profile, favorites] = await Promise.all([
+      supabase.from('profiles').select('role').eq('id', user.id).maybeSingle(),
+      supabase.from('saved_posts').select('post_id').eq('user_id', user.id)
+    ]);
+    if (!valid) return;
+    if (profile.error) console.error('Lỗi tải quyền:', profile.error);
+    if (favorites.error) console.error('Lỗi tải bài đã lưu:', favorites.error);
+    setRole(profile.data?.role === 'admin' ? 'admin' : 'member');
+    setSaved((favorites.data || []).map(item => item.post_id));
+  }
+  loadAccountData();
+  return () => { valid = false; };
+}, [user?.id]);
 const[motionRunning,setMotionRunning]=useState(false),[motionEvents,setMotionEvents]=useState([]),[motionPanel,setMotionPanel]=useState(false),[motionStopToken,setMotionStopToken]=useState(0);
 const onMotionEvent=useCallback((entry)=>{setMotionEvents(old=>[entry,...old].slice(0,30));setMotionPanel(true)},[]);
 const notify=(m)=>{setToast(m);setTimeout(()=>setToast(''),4200)};
@@ -58,17 +78,119 @@ const signOut = async () => {
   }
 };
 
-const requireAuth=()=>{if(!user){setAuthOpen(true);notify('Hãy đăng nhập để sử dụng tính năng cộng đồng.');return false}return true};
-async function addPost(payload,file){if(!requireAuth())return false;setLoading(true);try{let author=user.user_metadata?.display_name||user.email?.split('@')[0]||user.name||'Thành viên';if(live){const {data,error}=await supabase.from('posts').insert({author_id:user.id,title:payload.title,body:payload.body,category:payload.category}).select().single();if(error)throw error;if(file){const path=`${user.id}/${data.id}/${uid()}-${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;const up=await supabase.storage.from('community-files').upload(path,file,{upsert:false});if(up.error)throw up.error;const ins=await supabase.from('post_attachments').insert({post_id:data.id,storage_path:path,filename:file.name,mime_type:file.type,size_bytes:file.size});if(ins.error)throw ins.error}await loadPosts();}else{let attachment=null;if(file){if(file.size>1_500_000)throw Error('Chế độ demo chỉ lưu tệp tối đa 1,5 MB. Để tải tệp lớn hơn, hãy kết nối Supabase.');attachment={name:file.name,type:file.type,data:await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file)})}}setPosts(p=>[{...payload,id:uid(),author,author_id:user.id,created_at:new Date().toISOString(),likes:0,comments:[],attachment},...p]);}notify('Đăng bài thành công!');return true}catch(e){notify('Không thể đăng bài: '+e.message);return false}finally{setLoading(false)}}
-async function loadPosts(){if(!live)return;const{data,error}=await supabase.from('posts').select('*,post_attachments(*)').eq('status','published').order('created_at',{ascending:false});if(error){notify('Lỗi tải bài viết: '+error.message);return}setPosts([...data.map(p=>({...p,author:p.profiles?.display_name||'Thành viên',comments:[],attachment:p.post_attachments?.[0]})),...SEED_POSTS])}
-useEffect(()=>{if(live)loadPosts()},[]);
-async function addComment(id,body){if(!requireAuth())return;if(live){const r=await supabase.from('comments').insert({post_id:id,author_id:user.id,body});if(r.error){notify(r.error.message);return}notify('Đã gửi bình luận');await loadPosts()}else setPosts(p=>p.map(a=>a.id===id?{...a,comments:[...(a.comments||[]),{id:uid(),author:user.name||user.email,body,created_at:new Date().toISOString()}]}:a))}
-async function reportPost(id,reason){if(!requireAuth())return;if(live){const r=await supabase.from('reports').insert({reporter_id:user.id,post_id:id,reason});if(r.error){notify(r.error.message);return}}else setReports(p=>[...p,{id:uid(),post_id:id,reporter_id:user.id,reason,status:'pending',created_at:new Date().toISOString()}]);notify('Đã tiếp nhận báo cáo. Cảm ơn ông đã giúp cộng đồng an toàn hơn!')}
-async function removePost(id){if(!requireAuth())return;if(!confirm('Xóa bài viết này?'))return;if(live){const r=await supabase.from('posts').delete().eq('id',id);if(r.error){notify(r.error.message);return}await loadPosts()}else setPosts(p=>p.filter(x=>x.id!==id));notify('Đã xóa bài viết')}
-const current=NAV.find(n=>n.id===page);
-return <div className="app"><aside className={'sidebar '+(drawer?'open':'')}><div className="brand" onClick={()=>go('home')}><div className="brand-icon"><HeartHandshake size={24}/></div><div><b>TICare<span>.</span></b><small>HIỂU ĐÚNG ĐỂ ĐỒNG HÀNH</small></div></div><div className="side-label">KHÔNG GIAN LÀM VIỆC</div><nav>{NAV.map(n=><button key={n.id} className={'nav-link '+(page===n.id?'active':'')} onClick={()=>go(n.id)}><n.icon size={19}/><span>{n.label}</span>{page===n.id&&<span className="active-dot"/>}</button>)}</nav><div className="side-bottom"><div className="privacy-note"><ShieldCheck size={20}/><div><b>Tôn trọng sự khác biệt</b><small>Không chẩn đoán y tế. Không lưu video camera mặc định.</small></div></div><div className="sidebar-version">TICare • Phiên bản thử nghiệm 1.0</div></div></aside>{drawer&&<div className="shade" onClick={()=>setDrawer(false)}/>}
+const requireAuth = () => {
+  if (user && supabase) return true;
+  setAuthOpen(true);
+  notify('Hãy đăng nhập để sử dụng tính năng cộng đồng.');
+  return false;
+};
+
+async function loadPosts() {
+  if (!supabase) { setPosts([]); return; }
+  const { data, error } = await supabase
+    .from('posts')
+    .select('*,post_attachments(*)')
+    .eq('status', 'published')
+    .order('created_at', { ascending: false })
+    .limit(100);
+  if (error) { console.error(error); notify('Lỗi tải bài viết: ' + error.message); return; }
+  const ids = [...new Set((data || []).map(p => p.author_id).filter(Boolean))];
+  let names = {};
+  if (ids.length) {
+    const result = await supabase.from('profiles').select('id,display_name').in('id', ids);
+    if (result.error) console.warn('Không tải được tên tác giả:', result.error);
+    names = Object.fromEntries((result.data || []).map(p => [p.id, p.display_name]));
+  }
+  setPosts((data || []).map(p => ({
+    ...p,
+    author: names[p.author_id] || 'Thành viên',
+    attachment: p.post_attachments?.[0] || null
+  })));
+}
+useEffect(() => { if (supabase) loadPosts(); else setPosts([]); }, []);
+
+async function addPost(payload, file) {
+  if (!requireAuth()) return false;
+  if (file && file.size > 8 * 1024 * 1024) {
+    notify('Tệp đính kèm không được vượt quá 8 MB.');
+    return false;
+  }
+  setLoading(true);
+  try {
+    const { data, error } = await supabase.from('posts').insert({
+      author_id: user.id,
+      title: payload.title,
+      body: payload.body,
+      category: payload.category
+    }).select().single();
+    if (error) throw error;
+    if (file) {
+      const path = `${user.id}/${data.id}/${uid()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const upload = await supabase.storage.from('community-files').upload(path, file, { upsert: false });
+      if (upload.error) throw upload.error;
+      const attachment = await supabase.from('post_attachments').insert({
+        post_id: data.id, storage_path: path, filename: file.name,
+        mime_type: file.type, size_bytes: file.size
+      });
+      if (attachment.error) throw attachment.error;
+    }
+    await loadPosts();
+    notify('Đăng bài thành công!');
+    return true;
+  } catch (error) {
+    console.error('Đăng bài:', error);
+    notify('Không thể đăng bài: ' + error.message);
+    return false;
+  } finally { setLoading(false); }
+}
+
+async function addComment(id, body) {
+  if (!requireAuth()) return false;
+  if (!body.trim() || body.length > 3000) return false;
+  const { error } = await supabase.from('comments').insert({
+    post_id: id, author_id: user.id, body: body.trim()
+  });
+  if (error) { notify('Không thể bình luận: ' + error.message); return false; }
+  notify('Đã gửi bình luận.');
+  return true;
+}
+
+async function reportPost(id, reason) {
+  if (!requireAuth()) return false;
+  const { error } = await supabase.from('reports').insert({
+    reporter_id: user.id, post_id: id, reason
+  });
+  if (error) { notify('Không thể gửi báo cáo: ' + error.message); return false; }
+  notify('Báo cáo đã được gửi tới quản trị viên.');
+  return true;
+}
+
+async function toggleSaved(id) {
+  if (!requireAuth()) return;
+  const already = saved.includes(id);
+  const result = already
+    ? await supabase.from('saved_posts').delete().eq('user_id', user.id).eq('post_id', id)
+    : await supabase.from('saved_posts').insert({ user_id: user.id, post_id: id });
+  if (result.error) { notify('Lỗi lưu bài: ' + result.error.message); return; }
+  setSaved(old => already ? old.filter(x => x !== id) : [...old, id]);
+  notify(already ? 'Đã bỏ lưu bài viết.' : 'Đã lưu bài viết vào tài khoản.');
+}
+
+async function removePost(id) {
+  if (!requireAuth()) return;
+  if (!window.confirm('Xóa bài viết này?')) return;
+  const { error } = await supabase.from('posts').delete().eq('id', id);
+  if (error) { notify('Không thể xóa bài: ' + error.message); return; }
+  await loadPosts();
+  notify('Đã xóa bài viết.');
+}
+const navItems = role === 'admin'
+  ? [...NAV, { id: 'admin', label: 'Quản trị báo cáo', icon: ShieldCheck }]
+  : NAV;
+const current = navItems.find(n => n.id === page);
+return <div className="app"><aside className={'sidebar '+(drawer?'open':'')}><div className="brand" onClick={()=>go('home')}><div className="brand-icon"><HeartHandshake size={24}/></div><div><b>TICare<span>.</span></b><small>HIỂU ĐÚNG ĐỂ ĐỒNG HÀNH</small></div></div><div className="side-label">KHÔNG GIAN LÀM VIỆC</div><nav>{navItems.map(n=><button key={n.id} className={'nav-link '+(page===n.id?'active':'')} onClick={()=>go(n.id)}><n.icon size={19}/><span>{n.label}</span>{page===n.id&&<span className="active-dot"/>}</button>)}</nav><div className="side-bottom"><div className="privacy-note"><ShieldCheck size={20}/><div><b>Tôn trọng sự khác biệt</b><small>Không chẩn đoán y tế. Không lưu video camera mặc định.</small></div></div><div className="sidebar-version">TICare • Cộng đồng giáo dục</div></div></aside>{drawer&&<div className="shade" onClick={()=>setDrawer(false)}/>}
 <div className="workspace"><header className="topbar"><button className="icon-button mobile-menu" onClick={()=>setDrawer(true)}><Menu size={22}/></button><div className="breadcrumbs"><span>Không gian TICare</span><ChevronRight size={15}/><strong>{current?.label}</strong></div><div className="top-actions">{motionRunning&&<button className="btn btn-outline small" onClick={()=>go('motion')}><Camera size={15}/> Đang quan sát</button>}<button className="icon-button" title="Thông báo Motion Insight" onClick={()=>setMotionPanel(v=>!v)}><Bell size={19}/>{motionEvents.length>0&&<span className="motion-count">{motionEvents.length}</span>}</button><span className={'mode-pill '+(live?'online':'')}><span className="status-dot"/>{live?'Đã cấu hình Supabase':'Chưa cấu hình Supabase'}</span>{user?<button className="account" onClick={signOut}><UserRound size={17}/><span>{user.user_metadata?.display_name||user.name||user.email?.split('@')[0]}</span><LogOut size={15}/></button>:<button className="btn btn-outline small" onClick={()=>setAuthOpen(true)}><LogIn size={16}/> Đăng nhập</button>}</div></header>
-<main className="main">{page==='home'&&<Home go={go} posts={posts}/ >}<div style={{display:page==='motion'?'block':'none'}}><Motion onRunningChange={setMotionRunning} onMotionEvent={onMotionEvent} stopToken={motionStopToken}/></div>{page==='community'&&<Community posts={posts} user={user} onPost={addPost} onComment={addComment} onReport={reportPost} onRemove={removePost} requireAuth={requireAuth} saved={saved} setSaved={setSaved} loading={loading} notify={notify}/ >}{page==='assistant'&&<Assistant user={user} notify={notify}/ >}{page==='education'&&<Education/>}{page==='support'&&<Support/>}</main>{motionPanel&&<section className="motion-notification-panel"><div className="motion-notification-head"><b>Thông báo Motion Insight</b><button className="icon-button" onClick={()=>setMotionPanel(false)} aria-label="Đóng thông báo"><X size={17}/></button></div>{motionEvents.length===0?<p>Chưa có thông báo trong phiên này.</p>:<>{motionEvents.map(e=><div className={"motion-event "+e.level} key={e.id}><strong>{e.level==='warning'?'Cảnh báo tần suất cao':'Thông báo chuyển động lặp lại'}</strong><small>{new Date(e.time).toLocaleTimeString('vi-VN')} · {e.frequency} chu kỳ/phút (ước tính)</small><p>Chỉ là tín hiệu thử nghiệm, không xác định tic hoặc bệnh lý.</p></div>)}<button className="btn btn-outline small" onClick={()=>setMotionEvents([])}>Xóa lịch sử phiên</button></>}</section>}<footer className="footer">© 2026 TICare · Nền tảng thông tin và hỗ trợ giáo viên · Không thay thế đánh giá chuyên môn y tế</footer></div>{authOpen&&<AuthModal onClose={()=>setAuthOpen(false)} onSuccess={u=>{setUser(u);setAuthOpen(false);notify('Đăng nhập thành công!')}} notify={notify}/ >}{resetOpen&&<ResetPasswordModal onClose={()=>setResetOpen(false)} notify={notify}/>}{toast&&<div className="toast"><Info size={18}/>{toast}<button onClick={()=>setToast('')}><X size={16}/></button></div>}</div>}
+<main className="main">{page==='home'&&<Home go={go} posts={posts}/ >}<div style={{display:page==='motion'?'block':'none'}}><Motion onRunningChange={setMotionRunning} onMotionEvent={onMotionEvent} stopToken={motionStopToken}/></div>{page==='community'&&<Community posts={posts} user={user} onPost={addPost} onComment={addComment} onReport={reportPost} onRemove={removePost} requireAuth={requireAuth} saved={saved} onToggleSave={toggleSaved} loading={loading} notify={notify}/ >}{page==='admin'&&role==='admin'&&<AdminPanel notify={notify} onRefreshPosts={loadPosts}/ >}{page==='assistant'&&<Assistant user={user} notify={notify}/ >}{page==='education'&&<Education/>}{page==='support'&&<Support/>}</main>{motionPanel&&<section className="motion-notification-panel"><div className="motion-notification-head"><b>Thông báo Motion Insight</b><button className="icon-button" onClick={()=>setMotionPanel(false)} aria-label="Đóng thông báo"><X size={17}/></button></div>{motionEvents.length===0?<p>Chưa có thông báo trong phiên này.</p>:<>{motionEvents.map(e=><div className={"motion-event "+e.level} key={e.id}><strong>{e.level==='warning'?'Cảnh báo tần suất cao':'Thông báo chuyển động lặp lại'}</strong><small>{new Date(e.time).toLocaleTimeString('vi-VN')} · {e.frequency} chu kỳ/phút (ước tính)</small><p>Chỉ là tín hiệu thử nghiệm, không xác định tic hoặc bệnh lý.</p></div>)}<button className="btn btn-outline small" onClick={()=>setMotionEvents([])}>Xóa lịch sử phiên</button></>}</section>}<footer className="footer">© 2026 TICare · Nền tảng thông tin và hỗ trợ giáo viên · Không thay thế đánh giá chuyên môn y tế</footer></div>{authOpen&&<AuthModal onClose={()=>setAuthOpen(false)} onSuccess={u=>{setUser(u);setAuthOpen(false);notify('Đăng nhập thành công!')}} notify={notify}/ >}{resetOpen&&<ResetPasswordModal onClose={()=>setResetOpen(false)} notify={notify}/>}{toast&&<div className="toast"><Info size={18}/>{toast}<button onClick={()=>setToast('')}><X size={16}/></button></div>}</div>}
 function Heading({eyebrow,title,desc,action}){return <div className="page-heading"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1>{desc&&<p>{desc}</p>}</div>{action}</div>}
 function Home({go,posts}){return <><div className="hero"><div className="hero-content"><span className="hero-tag"><span className="glow-dot"/> NỀN TẢNG GIÁO DỤC HÒA NHẬP</span><h1>Hiểu đúng để<br/><em>đồng hành tốt hơn.</em></h1><p>TICare kết nối công nghệ, tri thức và sự thấu cảm — hỗ trợ giáo viên tạo nên một lớp học nơi mỗi sự khác biệt đều được tôn trọng.</p><div className="hero-buttons"><button className="btn btn-mint" onClick={()=>go('assistant')}>Khám phá trợ lý AI <ArrowRight size={17}/></button><button className="btn btn-ghost" onClick={()=>go('motion')}>Thử camera <ScanEye size={17}/></button></div></div><div className="hero-art"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="heart-core"><HeartHandshake size={70} strokeWidth={1.4}/></div><div className="floating f1"><BookOpen size={19}/> Kiến thức</div><div className="floating f2"><UsersRound size={19}/> Cộng đồng</div><div className="floating f3"><Activity size={19}/> Công nghệ</div></div></div><div className="section-row"><div><h2>Khám phá TICare</h2><p>Mọi công cụ cần thiết, trong một không gian thống nhất.</p></div></div><div className="feature-grid">{[{id:'motion',icon:ScanEye,color:'teal',title:'Quan sát vận động',desc:'Camera nhận diện điểm khớp và mô tả tín hiệu chuyển động lặp lại.'},{id:'community',icon:UsersRound,color:'blue',title:'Cộng đồng giáo dục',desc:'Chia sẻ bài viết, tài liệu và kinh nghiệm hỗ trợ học sinh.'},{id:'assistant',icon:Bot,color:'violet',title:'Trợ lý thông tin AI',desc:'Tra cứu, diễn giải tiếng Việt và dẫn nguồn kiến thức về tic.'},{id:'education',icon:GraduationCap,color:'amber',title:'Giáo dục hòa nhập',desc:'Bài học và hoạt động lan tỏa sự cảm thông.'},{id:'support',icon:HandHeart,color:'pink',title:'Góc đồng hành',desc:'Gợi ý ứng xử và phối hợp hỗ trợ trong lớp học.'}].map(x=><button className="feature-card" key={x.id} onClick={()=>go(x.id)}><div className={'feature-icon '+x.color}><x.icon size={24}/></div><h3>{x.title}</h3><p>{x.desc}</p><span>Khám phá <ArrowRight size={15}/></span></button>)}</div><div className="home-lower"><div className="panel"><div className="panel-title"><h3>Bài viết mới từ cộng đồng</h3><button className="link-button" onClick={()=>go('community')}>Xem tất cả <ArrowRight size={15}/></button></div>{posts.slice(0,3).map(p=><div className="compact-post" key={p.id}><span className="post-category">{p.category}</span><b>{p.title}</b><small>{p.author} · {fmt(p.created_at)}</small></div>)}</div><div className="panel tip-panel"><div className="tip-icon"><Heart size={24}/></div><h3>Một lời nhắc nhỏ</h3><p>Không phải mọi chuyển động lặp lại đều là tic. Một công cụ quan sát chỉ có thể hỗ trợ mô tả chuyển động — không thể thay thế đánh giá của chuyên gia.</p><button className="link-button" onClick={()=>go('education')}>Tìm hiểu thêm <ArrowRight size={15}/></button></div></div></>}
 
@@ -524,10 +646,220 @@ function ResetPasswordModal({ onClose, notify }) {
   );
 }
 
-function Community({posts,user,onPost,onComment,onReport,onRemove,requireAuth,saved,setSaved,loading,notify}){const[filter,setFilter]=useState('Tất cả'),[query,setQuery]=useState(''),[compose,setCompose]=useState(false),[selected,setSelected]=useState(null),[report,setReport]=useState(null);const categories=['Tất cả','Kiến thức về tic','Tài nguyên giáo dục','Tình huống lớp học','Kinh nghiệm chia sẻ'];const visible=posts.filter(p=>(filter==='Tất cả'||p.category===filter)&&`${p.title} ${p.body} ${p.author}`.toLowerCase().includes(query.toLowerCase()));return <><Heading eyebrow="KHÔNG GIAN CHIA SẺ" title="Cộng đồng TICare" desc="Cùng chia sẻ kiến thức, bài giảng và những cách làm giúp lớp học hòa nhập hơn." action={<button className="btn btn-primary" onClick={()=>{if(requireAuth())setCompose(true)}}><Plus size={18}/> Viết bài mới</button>}/><div className="community-layout"><div><div className="community-toolbar"><div className="search-field"><Search size={18}/><input placeholder="Tìm bài viết, tài liệu, chủ đề..." value={query} onChange={e=>setQuery(e.target.value)}/></div><div className="filter-pills">{categories.map(c=><button key={c} className={filter===c?'on':''} onClick={()=>setFilter(c)}>{c}</button>)}</div></div><div className="posts-list">{visible.length===0&&<div className="empty">Chưa tìm thấy bài viết phù hợp.</div>}{visible.map(p=><article className="post-card" key={p.id}><div className="post-head"><div className="avatar">{(p.author||'T')[0].toUpperCase()}</div><div><b>{p.author||'Thành viên'}</b><small>{fmt(p.created_at)} · <span className="post-category">{p.category}</span></small></div>{user&&p.author_id===user.id&&<button className="icon-button danger" title="Xóa bài" onClick={()=>onRemove(p.id)}><Trash2 size={17}/></button>}</div><h3>{p.title}</h3><p className="post-preview">{p.body}</p>{p.attachment&&<div className="attachment"><Paperclip size={16}/>{p.attachment.name||p.attachment.filename}</div>}<div className="post-actions"><button onClick={()=>setSelected(p)}><MessageCircle size={17}/> Bình luận {p.comments?.length||''}</button><button onClick={()=>{if(!requireAuth())return;setSaved(a=>a.includes(p.id)?a.filter(x=>x!==p.id):[...a,p.id])}}><Bookmark size={17} fill={saved.includes(p.id)?'currentColor':'none'}/> {saved.includes(p.id)?'Đã lưu':'Lưu bài'}</button><button onClick={()=>{if(requireAuth())setReport(p)}}><Flag size={17}/> Báo cáo</button><button className="readmore" onClick={()=>setSelected(p)}>Đọc tiếp <ArrowRight size={16}/></button></div></article>)}</div></div><aside className="community-aside"><div className="panel"><div className="side-panel-icon"><UsersRound size={22}/></div><h3>Chào mừng đến cộng đồng!</h3><p>Một không gian để cùng học hỏi, chia sẻ và hỗ trợ lẫn nhau.</p><div className="stat-row"><b>{posts.length}</b><span>bài viết</span></div><div className="stat-row"><b>{categories.length-1}</b><span>chủ đề</span></div></div><div className="panel rule-panel"><h3><ShieldCheck size={18}/> Nguyên tắc chia sẻ</h3><p>Không công khai thông tin nhận diện hoặc sức khỏe của học sinh; không đưa ra chẩn đoán hay lời khuyên điều trị thiếu căn cứ.</p><p>Bài đăng cộng đồng là nội dung do người dùng chia sẻ, không mặc nhiên là thông tin đã được TICare xác thực.</p></div></aside></div>{compose&&<ComposeModal onClose={()=>setCompose(false)} onPost={onPost} loading={loading}/ >}{selected&&<PostModal post={posts.find(p=>p.id===selected.id)||selected} onClose={()=>setSelected(null)} onComment={onComment} requireAuth={requireAuth} notify={notify}/ >}{report&&<ReportModal post={report} onClose={()=>setReport(null)} onSubmit={onReport}/>}</>}
-function ComposeModal({onClose,onPost,loading}){const[title,setTitle]=useState(''),[body,setBody]=useState(''),[category,setCategory]=useState('Tài nguyên giáo dục'),[file,setFile]=useState(null);async function submit(e){e.preventDefault();if(!title.trim()||!body.trim())return;const ok=await onPost({title:title.trim(),body:body.trim(),category},file);if(ok)onClose()}return <div className="modal-backdrop"><div className="modal compose-modal"><button className="close" onClick={onClose}><X/></button><h2>Chia sẻ cùng cộng đồng</h2><p>Những tài liệu nhỏ có thể tạo nên thay đổi lớn.</p><form onSubmit={submit} className="form-stack"><label>Tiêu đề<input required maxLength={150} value={title} onChange={e=>setTitle(e.target.value)} placeholder="Đặt tiêu đề dễ hiểu..."/></label><label>Chủ đề<select value={category} onChange={e=>setCategory(e.target.value)}>{['Kiến thức về tic','Tài nguyên giáo dục','Tình huống lớp học','Kinh nghiệm chia sẻ'].map(x=><option key={x}>{x}</option>)}</select></label><label>Nội dung<textarea required rows={8} value={body} onChange={e=>setBody(e.target.value)} placeholder="Chia sẻ bài học, hoạt động, kinh nghiệm... (không đăng dữ liệu riêng tư của học sinh)"/></label><label className="file-input"><Paperclip size={18}/> {file?file.name:'Đính kèm PDF, DOCX, PPTX hoặc ảnh'}<input type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,image/png,image/jpeg,image/webp" onChange={e=>setFile(e.target.files[0]||null)}/></label><div className="muted small-text">Giới hạn tệp: 8 MB khi kết nối Supabase; 1,5 MB trong chế độ demo. Bài đăng công khai sau khi gửi.</div><button disabled={loading} className="btn btn-primary full">{loading?'Đang đăng...':'Đăng bài viết'} <Send size={16}/></button></form></div></div>}
-function PostModal({post,onClose,onComment,requireAuth,notify}){const[text,setText]=useState('');const[comments,setComments]=useState([]);useEffect(()=>{if(!live||post.id.startsWith('seed-'))return;supabase.from('comments').select('*,profiles(display_name)').eq('post_id',post.id).order('created_at').then(({data})=>setComments(data||[]))},[post.id]);const all=live?comments:(post.comments||[]);async function submit(e){e.preventDefault();if(!text.trim())return;if(!requireAuth())return;if(live&&post.id.startsWith('seed-')){notify('Đây là bài minh họa. Hãy chọn bài do thành viên đăng để bình luận.');return}await onComment(post.id,text.trim());if(live){const{data}=await supabase.from('comments').select('*,profiles(display_name)').eq('post_id',post.id).order('created_at');setComments(data||[])}setText('')}async function download(){if(post.attachment?.data){const a=document.createElement('a');a.href=post.attachment.data;a.download=post.attachment.name;a.click()}else if(live&&post.attachment?.storage_path){const{data,error}=await supabase.storage.from('community-files').createSignedUrl(post.attachment.storage_path,60);if(error){notify(error.message);return}window.open(data.signedUrl,'_blank','noopener,noreferrer')}}return <div className="modal-backdrop"><div className="modal post-modal"><button className="close" onClick={onClose}><X/></button><span className="post-category">{post.category}</span><h2>{post.title}</h2><div className="byline">{post.author} · {fmt(post.created_at)}</div><div className="post-full">{post.body}</div>{post.attachment&&<button className="attachment attachment-button" onClick={download}><Download size={17}/>{post.attachment.name||post.attachment.filename}</button>}<div className="comment-section"><h3>Bình luận ({all.length})</h3>{all.map(c=><div className="comment" key={c.id}><b>{c.profiles?.display_name||c.author||'Thành viên'}</b><p>{c.body}</p></div>)}<form onSubmit={submit} className="comment-form"><input value={text} onChange={e=>setText(e.target.value)} placeholder="Viết bình luận tích cực..."/><button className="btn btn-primary" disabled={!text.trim()}><Send size={16}/></button></form></div></div></div>}
-function ReportModal({post,onClose,onSubmit}){const[reason,setReason]=useState('Thông tin sai lệch hoặc thiếu nguồn');return <div className="modal-backdrop"><div className="modal report-modal"><button className="close" onClick={onClose}><X/></button><h2>Báo cáo nội dung</h2><p>Giúp TICare duy trì một cộng đồng an toàn và tôn trọng.</p><div className="report-target">{post.title}</div><div className="form-stack"><label>Lý do báo cáo<select value={reason} onChange={e=>setReason(e.target.value)}>{['Thông tin sai lệch hoặc thiếu nguồn','Tiết lộ thông tin cá nhân học sinh','Nội dung xúc phạm, kỳ thị','Spam hoặc quảng cáo','Vi phạm khác'].map(x=><option key={x}>{x}</option>)}</select></label><button className="btn btn-primary full" onClick={()=>{onSubmit(post.id,reason);onClose()}}>Gửi báo cáo <Flag size={16}/></button></div></div></div>}
+function Community({ posts, user, onPost, onComment, onReport, onRemove, requireAuth, saved, onToggleSave, loading, notify }) {
+  const [filter, setFilter] = useState('Tất cả');
+  const [query, setQuery] = useState('');
+  const [view, setView] = useState('all');
+  const [sort, setSort] = useState('newest');
+  const [compose, setCompose] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [report, setReport] = useState(null);
+  const categories = ['Tất cả','Kiến thức về tic','Tài nguyên giáo dục','Tình huống lớp học','Kinh nghiệm chia sẻ'];
+  const visible = posts.filter(p =>
+    (view === 'all' || saved.includes(p.id)) &&
+    (filter === 'Tất cả' || p.category === filter) &&
+    `${p.title} ${p.body} ${p.author}`.toLowerCase().includes(query.toLowerCase())
+  ).sort((a,b) => sort === 'newest'
+    ? new Date(b.created_at) - new Date(a.created_at)
+    : new Date(a.created_at) - new Date(b.created_at));
+  return <>
+    <Heading eyebrow="KHÔNG GIAN CHIA SẺ" title="Cộng đồng TICare"
+      desc="Chia sẻ tài liệu, kiến thức và kinh nghiệm về giáo dục hòa nhập."
+      action={<button className="btn btn-primary" onClick={() => { if(requireAuth()) setCompose(true); }}><Plus size={18}/> Viết bài mới</button>} />
+    <div className="community-layout"><div>
+      <div className="community-toolbar" style={{flexWrap:'wrap'}}>
+        <div className="search-field"><Search size={18}/><input placeholder="Tìm bài viết..." value={query} onChange={e=>setQuery(e.target.value)}/></div>
+        <div className="filter-pills">
+          <button className={view==='all'?'on':''} onClick={()=>setView('all')}>Tất cả bài viết</button>
+          <button className={view==='saved'?'on':''} onClick={()=>{if(requireAuth())setView('saved')}}><Bookmark size={15}/> Đã lưu ({saved.length})</button>
+        </div>
+        <label style={{display:'flex',alignItems:'center',gap:8,fontSize:13}}>
+          Sắp xếp:
+          <select value={sort} onChange={e=>setSort(e.target.value)}>
+            <option value="newest">Mới nhất</option><option value="oldest">Cũ nhất</option>
+          </select>
+        </label>
+      </div>
+      <div className="filter-pills" style={{marginBottom:18}}>
+        {categories.map(c=><button key={c} className={filter===c?'on':''} onClick={()=>setFilter(c)}>{c}</button>)}
+      </div>
+      <div className="posts-list">
+        {visible.length===0&&<div className="empty">{view==='saved'?'Chưa có bài đã lưu phù hợp.':'Chưa tìm thấy bài viết phù hợp.'}</div>}
+        {visible.map(p=><article className="post-card" key={p.id}>
+          <div className="post-head"><div className="avatar">{(p.author||'T')[0].toUpperCase()}</div>
+            <div><b>{p.author||'Thành viên'}</b><small>{fmt(p.created_at)} · <span className="post-category">{p.category}</span></small></div>
+            {user&&p.author_id===user.id&&<button className="icon-button danger" title="Xóa bài" onClick={()=>onRemove(p.id)}><Trash2 size={17}/></button>}
+          </div>
+          <h3>{p.title}</h3><p className="post-preview">{p.body}</p>
+          {p.attachment&&<div className="attachment"><Paperclip size={16}/>{p.attachment.filename||p.attachment.name}</div>}
+          <div className="post-actions">
+            <button onClick={()=>setSelected(p)}><MessageCircle size={17}/> Bình luận</button>
+            <button onClick={()=>onToggleSave(p.id)}><Bookmark size={17} fill={saved.includes(p.id)?'currentColor':'none'}/> {saved.includes(p.id)?'Bỏ lưu':'Lưu bài'}</button>
+            <button onClick={()=>{if(requireAuth())setReport(p)}}><Flag size={17}/> Báo cáo</button>
+            <button className="readmore" onClick={()=>setSelected(p)}>Đọc tiếp <ArrowRight size={16}/></button>
+          </div>
+        </article>)}
+      </div>
+    </div>
+    <aside className="community-aside">
+      <div className="panel"><div className="side-panel-icon"><UsersRound size={22}/></div><h3>Cộng đồng TICare</h3>
+        <p>Cùng chia sẻ tri thức và hỗ trợ lớp học hòa nhập.</p>
+        <div className="stat-row"><b>{posts.length}</b><span>bài viết đang hiển thị</span></div>
+        <div className="stat-row"><b>{categories.length-1}</b><span>chủ đề</span></div>
+      </div>
+      <div className="panel rule-panel"><h3><ShieldCheck size={18}/> Nguyên tắc chia sẻ</h3>
+        <p>Không tiết lộ danh tính hoặc thông tin sức khỏe của học sinh; không đưa ra chẩn đoán.</p>
+        <p>Nội dung cộng đồng do thành viên đăng tải, không mặc nhiên được TICare xác thực.</p>
+      </div>
+    </aside></div>
+    {compose&&<ComposeModal onClose={()=>setCompose(false)} onPost={onPost} loading={loading}/ >}
+    {selected&&<PostModal post={posts.find(p=>p.id===selected.id)||selected} onClose={()=>setSelected(null)} onComment={onComment} requireAuth={requireAuth} notify={notify}/ >}
+    {report&&<ReportModal post={report} onClose={()=>setReport(null)} onSubmit={onReport}/ >}
+  </>;
+}
+function ComposeModal({onClose,onPost,loading}){const[title,setTitle]=useState(''),[body,setBody]=useState(''),[category,setCategory]=useState('Tài nguyên giáo dục'),[file,setFile]=useState(null);async function submit(e){e.preventDefault();if(!title.trim()||!body.trim())return;const ok=await onPost({title:title.trim(),body:body.trim(),category},file);if(ok)onClose()}return <div className="modal-backdrop"><div className="modal compose-modal"><button className="close" onClick={onClose}><X/></button><h2>Chia sẻ cùng cộng đồng</h2><p>Những tài liệu nhỏ có thể tạo nên thay đổi lớn.</p><form onSubmit={submit} className="form-stack"><label>Tiêu đề<input required maxLength={150} value={title} onChange={e=>setTitle(e.target.value)} placeholder="Đặt tiêu đề dễ hiểu..."/></label><label>Chủ đề<select value={category} onChange={e=>setCategory(e.target.value)}>{['Kiến thức về tic','Tài nguyên giáo dục','Tình huống lớp học','Kinh nghiệm chia sẻ'].map(x=><option key={x}>{x}</option>)}</select></label><label>Nội dung<textarea required rows={8} value={body} onChange={e=>setBody(e.target.value)} placeholder="Chia sẻ bài học, hoạt động, kinh nghiệm... (không đăng dữ liệu riêng tư của học sinh)"/></label><label className="file-input"><Paperclip size={18}/> {file?file.name:'Đính kèm PDF, DOCX, PPTX hoặc ảnh'}<input type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,image/png,image/jpeg,image/webp" onChange={e=>setFile(e.target.files[0]||null)}/></label><div className="muted small-text">Giới hạn tệp: 8 MB. Không tải thông tin riêng tư của học sinh. Bài đăng công khai sau khi gửi.</div><button disabled={loading} className="btn btn-primary full">{loading?'Đang đăng...':'Đăng bài viết'} <Send size={16}/></button></form></div></div>}
+function PostModal({post,onClose,onComment,requireAuth,notify}) {
+  const [text,setText] = useState('');
+  const [comments,setComments] = useState([]);
+  const [loading,setLoading] = useState(true);
+  const [sending,setSending] = useState(false);
+  async function loadComments() {
+    if (!supabase) { setLoading(false); return; }
+    setLoading(true);
+    const {data,error} = await supabase.from('comments')
+      .select('id,author_id,body,created_at').eq('post_id',post.id)
+      .order('created_at',{ascending:true});
+    if (error) {notify('Không thể tải bình luận: '+error.message);setLoading(false);return;}
+    const ids = [...new Set((data||[]).map(x=>x.author_id).filter(Boolean))];
+    let names = {};
+    if (ids.length) {
+      const result = await supabase.from('profiles').select('id,display_name').in('id',ids);
+      names = Object.fromEntries((result.data||[]).map(x=>[x.id,x.display_name]));
+    }
+    setComments((data||[]).map(x=>({...x,author:names[x.author_id]||'Thành viên'})));
+    setLoading(false);
+  }
+  useEffect(()=>{loadComments()},[post.id]);
+  async function submit(e) {
+    e.preventDefault();
+    if (!text.trim()||sending||!requireAuth()) return;
+    setSending(true);
+    const ok = await onComment(post.id,text.trim());
+    if (ok) {setText('');await loadComments();}
+    setSending(false);
+  }
+  async function download() {
+    if (!post.attachment?.storage_path) return;
+    const {data,error} = await supabase.storage.from('community-files')
+      .createSignedUrl(post.attachment.storage_path,60);
+    if (error) {notify('Không thể mở tài liệu: '+error.message);return;}
+    window.open(data.signedUrl,'_blank','noopener,noreferrer');
+  }
+  return <div className="modal-backdrop"><div className="modal post-modal">
+    <button className="close" onClick={onClose}><X/></button>
+    <span className="post-category">{post.category}</span><h2>{post.title}</h2>
+    <div className="byline">{post.author} · {fmt(post.created_at)}</div>
+    <div className="post-full">{post.body}</div>
+    {post.attachment&&<button className="attachment attachment-button" onClick={download}><Download size={17}/>{post.attachment.filename||post.attachment.name}</button>}
+    <div className="comment-section"><h3>Bình luận ({comments.length})</h3>
+      {loading?<p>Đang tải bình luận...</p>:
+        comments.length===0?<p>Chưa có bình luận nào. Hãy mở đầu cuộc thảo luận!</p>:
+        comments.map(c=><div className="comment" key={c.id}><b>{c.author}</b><small> · {fmt(c.created_at)}</small><p>{c.body}</p></div>)}
+      <form onSubmit={submit} className="comment-form">
+        <input maxLength={3000} value={text} onChange={e=>setText(e.target.value)} placeholder="Viết bình luận tích cực..."/>
+        <button className="btn btn-primary" disabled={!text.trim()||sending}><Send size={16}/></button>
+      </form>
+    </div>
+  </div></div>;
+}
+
+function ReportModal({post,onClose,onSubmit}) {
+  const [reason,setReason] = useState('Thông tin sai lệch hoặc thiếu nguồn');
+  const [busy,setBusy] = useState(false);
+  const reasons = ['Thông tin sai lệch hoặc thiếu nguồn','Tiết lộ thông tin cá nhân học sinh','Nội dung xúc phạm, kỳ thị','Spam hoặc quảng cáo','Vi phạm khác'];
+  async function sendReport() {
+    setBusy(true);
+    try {const ok = await onSubmit(post.id,reason);if(ok)onClose();}
+    finally {setBusy(false);}
+  }
+  return <div className="modal-backdrop"><div className="modal report-modal">
+    <button className="close" onClick={onClose}><X/></button><h2>Báo cáo nội dung</h2>
+    <p>Báo cáo sẽ được quản trị viên xem xét, không tự động xóa bài.</p>
+    <div className="report-target">{post.title}</div>
+    <div className="form-stack"><label>Lý do báo cáo<select value={reason} onChange={e=>setReason(e.target.value)}>
+      {reasons.map(x=><option key={x}>{x}</option>)}
+    </select></label>
+    <button className="btn btn-primary full" disabled={busy} onClick={sendReport}>{busy?'Đang gửi...':'Gửi báo cáo'} <Flag size={16}/></button></div>
+  </div></div>;
+}
+
+function AdminPanel({notify,onRefreshPosts}) {
+  const [items,setItems] = useState([]);
+  const [busy,setBusy] = useState(null);
+  const [filter,setFilter] = useState('pending');
+  const [loading,setLoading] = useState(true);
+  async function reload() {
+    setLoading(true);
+    const {data,error} = await supabase.from('reports')
+      .select('id,post_id,reporter_id,reason,status,created_at,posts(id,title,body,status)')
+      .order('created_at',{ascending:false}).limit(200);
+    if(error)notify('Không thể tải báo cáo: '+error.message);
+    else setItems(data||[]);
+    setLoading(false);
+  }
+  useEffect(()=>{reload()},[]);
+  async function handle(item,action) {
+    setBusy(item.id);
+    try {
+      if(action==='hide'||action==='restore') {
+        const status = action==='hide'?'hidden':'published';
+        const {error} = await supabase.from('posts').update({status}).eq('id',item.post_id);
+        if(error)throw error;
+      }
+      if(action==='hide'||action==='dismiss') {
+        const {error} = await supabase.from('reports')
+          .update({status:action==='hide'?'reviewed':'dismissed'}).eq('id',item.id);
+        if(error)throw error;
+      }
+      await reload();
+      await onRefreshPosts();
+      notify(action==='hide'?'Đã ẩn bài và xử lý báo cáo.':action==='restore'?'Đã khôi phục bài viết.':'Đã bác bỏ báo cáo.');
+    }catch(error){console.error(error);notify('Không thể xử lý: '+error.message);}
+    finally{setBusy(null);}
+  }
+  const visible=items.filter(x=>filter==='all'||x.status===filter);
+  return <>
+    <Heading eyebrow="DÀNH CHO QUẢN TRỊ VIÊN" title="Kiểm duyệt cộng đồng"
+      desc="Xem báo cáo, ẩn bài vi phạm hoặc bác bỏ báo cáo. Mọi quyết định đều có thể rà soát." />
+    <div className="panel" style={{marginBottom:18}}>
+      <div className="filter-pills" style={{display:'flex',flexWrap:'wrap',alignItems:'center'}}>
+        <button className={filter==='pending'?'on':''} onClick={()=>setFilter('pending')}>Chờ xử lý ({items.filter(x=>x.status==='pending').length})</button>
+        <button className={filter==='reviewed'?'on':''} onClick={()=>setFilter('reviewed')}>Đã xử lý</button>
+        <button className={filter==='dismissed'?'on':''} onClick={()=>setFilter('dismissed')}>Đã bác bỏ</button>
+        <button className={filter==='all'?'on':''} onClick={()=>setFilter('all')}>Tất cả</button>
+        <button className="btn btn-outline small" onClick={reload}><RefreshCcw size={16}/> Làm mới</button>
+      </div>
+    </div>
+    {loading&&<div className="panel">Đang tải báo cáo...</div>}
+    {!loading&&visible.length===0&&<div className="panel">Không có báo cáo trong mục này.</div>}
+    {!loading&&visible.map(item=><article className="post-card" key={item.id} style={{marginBottom:16}}>
+      <div className="post-head"><div className="avatar"><Flag size={18}/></div>
+        <div><b>{item.posts?.title||'Bài viết không còn tồn tại'}</b>
+          <small>{fmt(item.created_at)} · {item.status==='pending'?'Đang chờ':item.status==='reviewed'?'Đã xử lý':'Đã bác bỏ'}</small></div>
+      </div>
+      <p><b>Lý do:</b> {item.reason}</p>
+      {item.posts&&<><p className="post-preview">{item.posts.body}</p>
+        <p className="small-text muted">Trạng thái bài: {item.posts.status==='hidden'?'Đang ẩn':item.posts.status==='published'?'Công khai':item.posts.status}</p>
+        <div className="post-actions" style={{flexWrap:'wrap'}}>
+          {item.posts.status==='published'&&<button disabled={busy===item.id} onClick={()=>{if(window.confirm('Ẩn bài viết này khỏi cộng đồng?'))handle(item,'hide')}}><Eye size={16}/> Ẩn bài & xử lý</button>}
+          {item.posts.status==='hidden'&&<button disabled={busy===item.id} onClick={()=>handle(item,'restore')}><RefreshCcw size={16}/> Khôi phục bài</button>}
+          {item.status==='pending'&&<button disabled={busy===item.id} onClick={()=>handle(item,'dismiss')}><CheckCircle2 size={16}/> Bác bỏ báo cáo</button>}
+        </div>
+      </>}
+    </article>)}
+    <div className="panel rule-panel"><p><ShieldCheck size={17}/> Chỉ quản trị viên được phân quyền trên Supabase mới có quyền thay đổi trạng thái bài và báo cáo.</p></div>
+  </>;
+}
 function Assistant({user,notify}){const[question,setQuestion]=useState(''),[messages,setMessages]=useState([]),[busy,setBusy]=useState(false),[showTopics,setShowTopics]=useState(true);const bottom=useRef(null);useEffect(()=>{bottom.current?.scrollIntoView({behavior:'smooth'});},[messages,busy]);function ask(q){if(!q.trim()||busy)return;setQuestion('');const result=localAnswer(q);setMessages(p=>[...p,{role:'user',text:q},{role:'assistant',text:result.answer,sources:result.sources||[],mode:'demo',topic:result.topic,note:result.note}]);}return <><Heading eyebrow="THƯ VIỆN TRI THỨC · DEMO OFFLINE" title="Trợ lý kiến thức TICare" desc="Khám phá câu trả lời được biên soạn sẵn về tic và giáo dục hòa nhập. Không dùng API trả phí, không chẩn đoán."/><div className="assistant-shell"><div className="chat-main"><div className="chat-top"><div className="chat-avatar"><Bot size={22}/></div><div><b>TICare Knowledge Assistant</b><small>Thư viện trả lời theo chủ đề · Không phải AI trực tuyến</small></div><span className="chat-tag"><ShieldCheck size={13}/> Chế độ demo miễn phí</span></div><div style={{padding:'12px 18px',borderBottom:'1px solid #e2e8f0',display:'flex',gap:10,alignItems:'center',justifyContent:'space-between',flexWrap:'wrap'}}><span style={{fontSize:13,color:'#475569'}}>15 chủ đề kiến thức, không cần API key hoặc mật khẩu.</span><button type="button" className="btn btn-outline small" onClick={()=>setShowTopics(v=>!v)}>{showTopics?'Ẩn danh sách câu hỏi':'Hiện danh sách câu hỏi'}</button></div>{showTopics&&<div style={{padding:'14px 18px',borderBottom:'1px solid #e2e8f0',maxHeight:245,overflowY:'auto'}}>{TOPIC_GROUPS.map(group=><div key={group.title} style={{marginBottom:12}}><b style={{display:'block',fontSize:13,marginBottom:7}}>{group.title}</b><div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{group.ids.map(id=>{const t=QUESTION_BANK.find(x=>x.id===id);return t?<button key={id} type="button" className="btn btn-outline small" onClick={()=>ask(t.examples[0])} style={{whiteSpace:'normal',textAlign:'left'}}>{t.title}</button>:null})}</div></div>)}</div>}<div className="chat-history">{messages.length===0&&<div className="chat-welcome"><div className="big-bot"><Bot size={34}/></div><h2>Chào mừng đến thư viện TICare!</h2><p>Chọn câu hỏi mẫu hoặc nhập câu hỏi theo chủ đề. Đây là bản minh họa nội dung biên soạn, không tạo câu trả lời bằng AI.</p><div className="suggestions">{SUGGESTIONS.slice(0,6).map(s=><button key={s} onClick={()=>ask(s)}>{s}<ArrowRight size={14}/></button>)}</div></div>}{messages.map((m,i)=><div className={'chat-bubble-row '+m.role} key={i}>{m.role==='assistant'&&<div className="tiny-bot"><Bot size={17}/></div>}<div className={'chat-bubble '+m.role}><div className="chat-text" style={{whiteSpace:'pre-line'}}>{m.text}</div>{m.role==='assistant'&&<><div className="sources"><b><BookOpen size={15}/> Nguồn đọc thêm (không tra cứu trực tiếp)</b>{m.sources?.map((s,j)=><a key={j} href={s.url} target="_blank" rel="noreferrer"><ExternalLink size={13}/>{s.name||s.title||s.url}</a>)}</div><div className="answer-note">● Câu trả lời mẫu · {m.topic?m.topic+' · ':''}{m.note}</div></>}</div></div>)}<div ref={bottom}/></div><form className="chat-input" onSubmit={e=>{e.preventDefault();ask(question)}}><input value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Hỏi về tic, giáo dục hòa nhập, Motion Insight..."/><button disabled={!question.trim()} className="btn btn-primary"><Send size={18}/></button></form><div className="chat-disclaimer"><Info size={14}/> Trợ lý này hoạt động bằng thư viện câu trả lời mẫu, không gọi AI trực tuyến và không truy cập Internet. AI thực sự là hướng phát triển tương lai.</div></div><aside className="chat-side"><div className="panel"><h3>Nguyên tắc trả lời</h3><div className="principle"><CheckCircle2 size={17}/> Thông tin giáo dục bằng tiếng Việt</div><div className="principle"><CheckCircle2 size={17}/> Nguồn để tự đọc thêm</div><div className="principle"><CheckCircle2 size={17}/> Không chẩn đoán</div><div className="principle"><CheckCircle2 size={17}/> Không phân tích camera</div></div><div className="panel"><h3>Thư viện nguồn</h3>{SOURCES.map(s=><a className="source-link" href={s.url} key={s.url} target="_blank" rel="noreferrer"><BookOpen size={17}/><span>{s.name}</span><ExternalLink size={13}/></a>)}</div></aside></div></>}
 function Motion({onRunningChange,onMotionEvent,stopToken}){const video=useRef(null),canvas=useRef(null),landmarker=useRef(null),stream=useRef(null),frame=useRef(null),history=useRef([]),lastSample=useRef(0);const[running,setRunning]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[persons,setPersons]=useState(0),[signal,setSignal]=useState('Chưa có dữ liệu'),[frequency,setFrequency]=useState(null),[elapsed,setElapsed]=useState(0),[started,setStarted]=useState(0);const active=useRef(false),startTime=useRef(0),levelSince=useRef(null),lastAlert=useRef(-Infinity),currentLevel=useRef('normal'),eventCb=useRef(onMotionEvent),runningCb=useRef(onRunningChange);
 const [noticeThreshold,setNoticeThreshold]=useState(35),[warningThreshold,setWarningThreshold]=useState(85),[holdSeconds,setHoldSeconds]=useState(5),[cooldownSeconds,setCooldownSeconds]=useState(60),[systemNotifications,setSystemNotifications]=useState(false),[soundEnabled,setSoundEnabled]=useState(false);
