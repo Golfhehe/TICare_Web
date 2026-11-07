@@ -3,5 +3,67 @@
 @media(max-width:1150px){.sidebar{width:230px}.workspace{margin-left:230px;width:calc(100% - 230px)}.main{padding:30px 25px 60px}.topbar{padding:0 25px}.hero-art{opacity:.75}.feature-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.community-layout,.motion-layout,.support-layout,.assistant-shell{grid-template-columns:minmax(0,1fr)}.community-aside,.motion-side,.chat-side{grid-template-columns:repeat(2,minmax(0,1fr));display:grid}.chat-main{min-height:600px}}
 @media(max-width:760px){.sidebar{transform:translateX(-100%);transition:transform .25s;width:270px}.sidebar.open{transform:translateX(0)}.shade{display:block;position:fixed;inset:0;background:#071d2a8a;z-index:15}.workspace{margin:0;width:100%}.mobile-menu{display:grid}.topbar{height:65px;padding:0 15px}.breadcrumbs>span,.breadcrumbs>svg{display:none}.mode-pill{display:none}.account span{display:none}.main{padding:22px 16px 45px}.hero{min-height:380px}.hero-content{padding:34px 25px;width:100%}.hero-art{opacity:.16;right:-100px;width:90%}.hero h1{font-size:33px}.hero p{font-size:12px}.hero-buttons{flex-wrap:wrap}.feature-grid{grid-template-columns:1fr 1fr;gap:10px}.feature-card{padding:17px;min-height:185px}.feature-card h3{font-size:12px}.feature-card p{font-size:10px}.home-lower,.lesson-grid{grid-template-columns:1fr}.page-heading{align-items:flex-start;flex-direction:column}.page-heading h1{font-size:24px}.community-aside,.motion-side,.chat-side{grid-template-columns:1fr}.post-actions{gap:11px}.chat-history{padding:16px}.suggestions{grid-template-columns:1fr}.chat-tag{display:none}.education-banner{padding:25px}.banner-symbol{display:none}.footer{padding:18px}.camera-footer{flex-direction:column;align-items:stretch}.camera-footer .btn{width:100%}.modal{padding:26px 20px}.post-card{padding:18px}}
 
-/* Motion Insight persistent observation and session notifications */
-.motion-notification-panel{position:fixed;right:22px;top:74px;z-index:60;width:min(360px,calc(100vw - 32px));max-height:65vh;overflow:auto;background:#fff;border:1px solid #dbe9e8;border-radius:14px;box-shadow:0 12px 36px #0c334329;padding:16px;color:#143443}.motion-notification-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.motion-event{padding:11px;margin-bottom:10px;background:#eaf6f4;border-left:3px solid #199f91;border-radius:8px}.motion-event.warning{background:#fff4e7;border-color:#df8b28}.motion-event small{display:block;color:#607986;margin-top:4px}.motion-event p{font-size:12px;margin:6px 0 0}.motion-count{font-size:10px;background:#d57820;color:white;border-radius:9px;padding:1px 4px;vertical-align:top}.motion-settings h3{display:flex;gap:8px;align-items:center}.motion-settings label:not(.motion-toggle){display:block;font-size:13px;font-weight:600;margin:12px 0}.motion-settings input[type=range]{display:block;width:100%;margin-top:6px;accent-color:#159c8f}.motion-toggle{display:flex;align-items:center;gap:9px;margin:12px 0;font-size:13px}.motion-toggle input{accent-color:#159c8f}
+
+/* TICare Visual Refresh 2026 — visual/UI layer, no change to backend logic */
+:root {--tc-primary:#0f9885;--tc-primary-deep:#087868;--tc-ink:#173845;--tc-muted:#708994;--tc-ring:#73d9c1;--tc-surface:#ffffff;--tc-soft:#f2faf8;--tc-shadow:0 14px 42px rgba(19,75,78,.075);}
+html{scroll-behavior:smooth}body{background:linear-gradient(145deg,#f8fcfb,#f1f7f8 65%,#f8fbfc);color:var(--tc-ink)}
+button,a,input,textarea,select{-webkit-tap-highlight-color:transparent}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid var(--tc-ring);outline-offset:3px}
+button:active:not(:disabled){transform:scale(.975)!important;filter:brightness(.97)}
+.sidebar{background:linear-gradient(168deg,#0b2734,#123b43 62%,#0c353f);border-right:1px solid rgba(141,237,209,.1)}
+.brand-icon{background:linear-gradient(140deg,#69e5c4,#30bda8);box-shadow:0 8px 28px rgba(40,193,163,.25)}
+.nav-link{position:relative;transition:background .2s ease,color .2s ease,transform .2s ease;border:1px solid transparent}
+.nav-link:hover{transform:translateX(4px);border-color:rgba(128,232,201,.16)}
+.nav-link.active{background:linear-gradient(90deg,#205557,#20444c);box-shadow:inset 3px 0 #6ae1c5;border-color:rgba(98,232,188,.17)}
+.topbar{position:sticky;top:0;z-index:12;background:rgba(255,255,255,.91);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:0 4px 30px rgba(21,66,72,.04)}
+.main{padding-top:32px}.main>*{animation:ticareEnter .32s cubic-bezier(.2,.7,.2,1) both}
+@keyframes ticareEnter{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:translateY(0)}}
+@keyframes ticareModal{from{opacity:0;transform:translateY(13px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+.modal{animation:ticareModal .24s cubic-bezier(.2,.7,.2,1) both}.modal-backdrop{animation:ticareFade .2s both}
+@keyframes ticareFade{from{opacity:0}to{opacity:1}}
+.btn,.account,.icon-button,.feature-card,.lesson-card,.post-card,.panel,.filter-pills button,.suggestions button,.accordion-item,.community-toolbar{transition:background .2s ease,color .2s ease,border-color .2s ease,box-shadow .24s ease,transform .2s ease}
+.btn:hover:not(:disabled),.account:hover,.icon-button:hover,.filter-pills button:hover,.suggestions button:hover{box-shadow:0 8px 24px rgba(9,106,94,.11)}
+.btn-primary{background:linear-gradient(120deg,#0b8e7d,#0aa48b);box-shadow:0 8px 22px rgba(11,143,121,.16)}
+.btn-primary:hover{background:linear-gradient(120deg,#087a6b,#07957f)}
+.btn-mint{box-shadow:0 9px 25px rgba(51,226,180,.18)}
+.btn:disabled,.icon-button:disabled{transform:none!important;box-shadow:none}
+.hero{border-radius:23px;box-shadow:0 16px 40px rgba(16,58,67,.13);background:radial-gradient(circle at 90% 10%,rgba(74,211,184,.22),transparent 35%),linear-gradient(120deg,#0b2a39,#12505a 80%,#0b6b6c)}
+.hero:after{content:'';position:absolute;inset:0;background-image:radial-gradient(rgba(215,255,248,.17) .75px,transparent .75px);background-size:18px 18px;opacity:.2;pointer-events:none}
+.feature-grid{gap:17px}.feature-card,.panel,.post-card,.lesson-card,.community-toolbar,.chat-main,.camera-panel{border-radius:19px;box-shadow:var(--tc-shadow)}
+.feature-card:hover,.lesson-card:hover,.post-card:hover{border-color:#95dacd;box-shadow:0 18px 45px rgba(13,98,93,.13);transform:translateY(-4px)}
+.feature-card:active,.lesson-card:active{transform:translateY(-1px) scale(.99)!important}
+.panel:hover{border-color:#d3e8e4}.feature-icon{box-shadow:inset 0 0 0 1px rgba(6,118,107,.045)}
+.page-heading h1{font-size:clamp(23px,2.5vw,33px);letter-spacing:-1.1px}
+.page-heading{padding-bottom:5px}.section-row h2{letter-spacing:-.65px}.post-card h3{line-height:1.4}
+.filter-pills button.on{background:var(--tc-primary);color:white;border-color:var(--tc-primary);box-shadow:0 5px 16px rgba(15,152,133,.17)}
+.filter-pills button:hover{border-color:#83d8c5}.post-actions button{border-radius:8px;padding:8px!important;margin:-8px 0}
+.post-actions button:hover{background:#eef9f5;color:#087f71}.post-actions .readmore:hover{color:#06735d}
+.modal-backdrop{backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.chat-bubble.assistant{background:#f0f8f6}.chat-main{min-height:570px}.chat-input:focus-within,.search-field:focus-within{border-color:#6dcbb9;box-shadow:0 0 0 3px rgba(66,197,172,.12)}
+/* Camera inactive stage: decorative overlay, no camera inference until user grants access */
+.camera-panel{border:1px solid #d9e7e9}.camera-stage{aspect-ratio:16/10;background:radial-gradient(circle at 50% 34%,#1b515d,#102e3c 60%,#0a202e);isolation:isolate}
+.camera-stage:before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(111,232,212,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(111,232,212,.08) 1px,transparent 1px);background-size:54px 54px;mask-image:linear-gradient(to bottom,transparent,black 25%,black 75%,transparent);pointer-events:none}
+.camera-stage:after{content:'';position:absolute;inset:0;box-shadow:inset 0 0 95px 16px rgba(0,0,0,.26);pointer-events:none}
+.camera-empty{position:relative;z-index:1;max-width:440px;width:90%;padding:44px 28px!important;display:flex;flex-direction:column;align-items:center;gap:10px}
+.camera-placeholder{width:82px;height:82px;margin:0 0 8px;border:1px solid rgba(137,243,214,.36);border-radius:22px;background:rgba(74,202,180,.1);box-shadow:0 0 35px rgba(56,209,179,.09);color:#80efcf}
+.camera-ready{font-weight:800;font-size:10px;letter-spacing:2px;color:#8ce8d2}.camera-empty h3{font-size:22px;letter-spacing:-.8px;margin:4px 0 0}
+.camera-empty p{font-size:12px;max-width:320px;color:#c1d7db;margin:0}.camera-empty p b{color:#b6ffdf}
+.camera-empty-note{margin-top:10px;font-size:10px;color:#a4d8ca;display:flex;gap:7px;align-items:center;background:rgba(10,28,36,.58);padding:9px 13px;border:1px solid rgba(123,224,206,.12);border-radius:99px}
+.camera-reticle{position:absolute;inset:14px;border:1px dashed rgba(92,224,193,.28);border-radius:27px;pointer-events:none}
+.camera-reticle span{position:absolute;width:24px;height:24px;border-color:#7cead1;border-style:solid;opacity:.8}.camera-reticle span:nth-child(1){top:-2px;left:-2px;border-width:3px 0 0 3px;border-radius:9px 0 0 0}.camera-reticle span:nth-child(2){top:-2px;right:-2px;border-width:3px 3px 0 0;border-radius:0 9px 0 0}.camera-reticle span:nth-child(3){bottom:-2px;left:-2px;border-width:0 0 3px 3px;border-radius:0 0 0 9px}.camera-reticle span:nth-child(4){bottom:-2px;right:-2px;border-width:0 3px 3px 0;border-radius:0 0 9px 0}
+.camera-header{background:#fbfefd}.camera-badge{border:1px solid #caece1}.motion-side .panel{box-shadow:0 8px 26px rgba(18,72,72,.04)}
+.education-guidance{margin-top:40px}.education-guidance .section-row{margin-bottom:19px}.education-guidance .support-layout{grid-template-columns:minmax(0,1fr) 260px}
+.mobile-bottom-nav{display:none}
+@media(max-width:1100px){.main{padding:27px 24px 60px}.community-layout,.motion-layout,.assistant-shell,.education-guidance .support-layout{grid-template-columns:minmax(0,1fr)}.hero-art{width:37%}}
+@media(max-width:760px){
+ .topbar{height:63px}.main{padding:18px 14px 90px}.footer{padding:17px 18px 90px}.sidebar{z-index:32}.shade{z-index:31}.top-actions{gap:5px}.breadcrumbs strong{max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-actions .btn.small{font-size:11px;padding:9px}.icon-button{padding:7px}
+ .mobile-bottom-nav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));position:fixed;bottom:0;left:0;right:0;z-index:25;background:rgba(255,255,255,.97);backdrop-filter:blur(16px);border-top:1px solid #dcece8;box-shadow:0 -10px 36px rgba(12,59,68,.09);padding:7px 5px max(8px,env(safe-area-inset-bottom))}
+ .mobile-bottom-nav button{border:0;background:transparent;color:#728a91;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;font-size:9px;font-weight:800;padding:6px 1px;border-radius:12px;min-width:0;transition:.2s}
+ .mobile-bottom-nav button.active{background:#e0f7ee;color:#078e78}.mobile-bottom-nav button:active{transform:scale(.94)}.mobile-bottom-nav span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+ .hero{min-height:340px}.hero-content{padding:29px 23px}.hero h1{font-size:clamp(27px,8.2vw,37px)}.hero-art{width:90%}.feature-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.feature-card{min-height:181px;padding:17px}.feature-card p{min-height:auto}.camera-stage{aspect-ratio:4/4}.camera-empty{padding:32px 22px!important}.camera-empty h3{font-size:19px}.camera-empty-note{font-size:9px}.camera-reticle{inset:9px}.camera-placeholder{height:65px;width:65px}
+ .education-guidance .support-layout{grid-template-columns:1fr}.community-toolbar{padding:13px}.filter-pills{flex-wrap:nowrap;overflow-x:auto;padding-bottom:5px}.filter-pills button{white-space:nowrap}.post-card{padding:17px}.post-actions{gap:8px}.chat-main{min-height:calc(100dvh - 245px);max-height:calc(100dvh - 170px)}
+}
+@media(max-width:400px){.feature-card{padding:13px;min-height:178px}.feature-card h3{font-size:11px}.brand{padding-bottom:24px}.top-actions .btn.small{padding:8px 9px}.camera-empty-note{display:none}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{animation-duration:.001ms!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
+
+.motion-page.is-visible{animation:ticareEnter .32s cubic-bezier(.2,.7,.2,1) both}
