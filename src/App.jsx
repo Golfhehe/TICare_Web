@@ -1118,7 +1118,7 @@ function Motion({onRunningChange,onMotionEvent,stopToken}) {
     samples.current={};series.current=[];previousPose.current=null;activeLevel.current={};lastNotify.current={};lastAt.current=0;
     try{
       const {PoseLandmarker,FaceLandmarker,FilesetResolver,DrawingUtils}=await import('@mediapipe/tasks-vision');
-      const vision=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');
+      const vision=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm');
       poseModel.current=await PoseLandmarker.createFromOptions(vision,{
         baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'CPU'},
         runningMode:'VIDEO',numPoses:1,minPoseDetectionConfidence:.5,minTrackingConfidence:.5
