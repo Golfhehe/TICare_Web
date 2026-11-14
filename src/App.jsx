@@ -1201,7 +1201,7 @@ function Motion({onRunningChange,onMotionEvent,stopToken}) {
         frame.current=requestAnimationFrame(loop);
       };
       frame.current=requestAnimationFrame(loop);
-    }catch(e){stop();setError(e.message||'Không thể khởi động Motion Insight')}
+     } catch (e) {   console.error("TICare Motion Insight startup error:", e);    const detail =     e?.message ||     e?.name ||     String(e) ||     "Lỗi không xác định";    stop();   setError("Không thể khởi động: " + detail); }
     finally{setBusy(false)}
   }
   const showAllPointsRef=useRef(showAllPoints);showAllPointsRef.current=showAllPoints;
