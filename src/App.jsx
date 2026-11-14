@@ -55,7 +55,7 @@ useEffect(() => {
   return () => { valid = false; };
 }, [user?.id]);
 const[motionRunning,setMotionRunning]=useState(false),[motionEvents,setMotionEvents]=useState([]),[motionPanel,setMotionPanel]=useState(false),[motionStopToken,setMotionStopToken]=useState(0);
-const onMotionEvent=useCallback((entry)=>{setMotionEvents(old=>[entry,...old].slice(0,30));setMotionPanel(true)},[]);
+const onMotionEvent=useCallback((entry)=>{setMotionEvents(old=>[entry,...old].slice(0,30));setMotionPanel(false)},[]);
 const notify=(m)=>{setToast(m);setTimeout(()=>setToast(''),4200)};
 const go=(p)=>{setPage(p);setDrawer(false);window.scrollTo({top:0,behavior:'smooth'})};
 
@@ -216,7 +216,7 @@ const navItems = role === 'admin'
 const current = navItems.find(n => n.id === page);
 return <div className="app"><aside className={'sidebar '+(drawer?'open':'')}><div className="brand" onClick={()=>go('home')}><div className="brand-icon"><HeartHandshake size={24}/></div><div><b>TICare<span>.</span></b><small>HIỂU ĐÚNG ĐỂ ĐỒNG HÀNH</small></div></div><div className="side-label">KHÔNG GIAN LÀM VIỆC</div><nav>{navItems.map(n=><button key={n.id} className={'nav-link '+(page===n.id?'active':'')} onClick={()=>go(n.id)}><n.icon size={19}/><span>{n.label}</span>{page===n.id&&<span className="active-dot"/>}</button>)}</nav><div className="side-bottom"><div className="privacy-note"><ShieldCheck size={20}/><div><b>Tôn trọng sự khác biệt</b><small>Không chẩn đoán y tế. Không lưu video camera mặc định.</small></div></div><div className="sidebar-version">TICare • Cộng đồng giáo dục</div></div></aside>{drawer&&<div className="shade" onClick={()=>setDrawer(false)}/>}
 <div className="workspace"><header className="topbar"><button className="icon-button mobile-menu" onClick={()=>setDrawer(true)}><Menu size={22}/></button><div className="breadcrumbs"><span>Không gian TICare</span><ChevronRight size={15}/><strong>{current?.label}</strong></div><div className="top-actions">{motionRunning&&<button className="btn btn-outline small" onClick={()=>go('motion')}><Camera size={15}/> Đang quan sát</button>}<button className="icon-button" title="Thông báo Motion Insight" onClick={()=>setMotionPanel(v=>!v)}><Bell size={19}/>{motionEvents.length>0&&<span className="motion-count">{motionEvents.length}</span>}</button><span className={'mode-pill '+(live?'online':'')}><span className="status-dot"/>{live?'Đã cấu hình Supabase':'Chưa cấu hình Supabase'}</span>{user?<><button className="icon-button" title="Hồ sơ cá nhân" onClick={()=>setProfileOpen(true)}><UserRound size={19}/></button><button className="account" onClick={signOut}><UserRound size={17}/><span>{profile?.display_name||user.user_metadata?.display_name||user.email?.split('@')[0]}</span><LogOut size={15}/></button></>:<button className="btn btn-outline small" onClick={()=>setAuthOpen(true)}><LogIn size={16}/> Đăng nhập</button>}</div></header>
-<main className="main">{page==='home'&&<Home go={go} posts={posts}/ >}<div className={page==='motion'?'motion-page is-visible':'motion-page'} style={{display:page==='motion'?'block':'none'}}><Motion onRunningChange={setMotionRunning} onMotionEvent={onMotionEvent} stopToken={motionStopToken}/></div>{page==='community'&&<Community posts={posts} user={user} initialView={communityView} onPost={addPost} onComment={addComment} onReport={reportPost} onRemove={removePost} onEditPost={updatePost} onOpenProfile={()=>setProfileOpen(true)} requireAuth={requireAuth} saved={saved} onToggleSave={toggleSaved} loading={loading} notify={notify}/ >}{page==='admin'&&role==='admin'&&<AdminPanel notify={notify} onRefreshPosts={loadPosts}/ >}{page==='assistant'&&<Assistant user={user} notify={notify}/ >}{page==='education'&&<Education user={user} role={role} notify={notify} openAuth={()=>setAuthOpen(true)}/>}</main>{motionPanel&&<section className="motion-notification-panel"><div className="motion-notification-head"><b>Thông báo Motion Insight</b><button className="icon-button" onClick={()=>setMotionPanel(false)} aria-label="Đóng thông báo"><X size={17}/></button></div>{motionEvents.length===0?<p>Chưa có thông báo trong phiên này.</p>:<>{motionEvents.map(e=><div className={"motion-event "+e.level} key={e.id}><strong>{e.level==='warning'?'Cảnh báo tần suất cao':'Thông báo chuyển động lặp lại'}</strong><small>{new Date(e.time).toLocaleTimeString('vi-VN')} · {e.frequency} chu kỳ/phút (ước tính)</small><p>Chỉ là tín hiệu thử nghiệm, không xác định tic hoặc bệnh lý.</p></div>)}<button className="btn btn-outline small" onClick={()=>setMotionEvents([])}>Xóa lịch sử phiên</button></>}</section>}<footer className="footer">© 2026 TICare · Nền tảng thông tin và hỗ trợ giáo viên · Không thay thế đánh giá chuyên môn y tế</footer></div><nav className="mobile-bottom-nav" aria-label="Điều hướng TICare trên điện thoại">{NAV.map(n=><button type="button" key={n.id} className={page===n.id?"active":""} onClick={()=>go(n.id)} aria-current={page===n.id?"page":undefined}><n.icon size={20}/><span>{n.id==="home"?"Trang chủ":n.id==="motion"?"Motion":n.id==="community"?"Cộng đồng":n.id==="assistant"?"Chatbot":"Education"}</span></button>)}</nav>{authOpen&&<AuthModal onClose={()=>setAuthOpen(false)} onSuccess={u=>{setUser(u);setAuthOpen(false);notify('Đăng nhập thành công!')}} notify={notify}/ >}{profileOpen&&user&&<ProfileModal profile={profile} user={user} posts={posts} saved={saved} onClose={()=>setProfileOpen(false)} onUpdate={updateProfile} onGoMyPosts={()=>{setProfileOpen(false);setCommunityView('mine');go('community');}}/>}{resetOpen&&<ResetPasswordModal onClose={()=>setResetOpen(false)} notify={notify}/>}{toast&&<div className="toast"><Info size={18}/>{toast}<button onClick={()=>setToast('')}><X size={16}/></button></div>}</div>}
+<main className="main">{page==='home'&&<Home go={go} posts={posts}/ >}<div className={page==='motion'?'motion-page is-visible':'motion-page'} style={{display:page==='motion'?'block':'none'}}><Motion onRunningChange={setMotionRunning} onMotionEvent={onMotionEvent} stopToken={motionStopToken}/></div>{page==='community'&&<Community posts={posts} user={user} initialView={communityView} onPost={addPost} onComment={addComment} onReport={reportPost} onRemove={removePost} onEditPost={updatePost} onOpenProfile={()=>setProfileOpen(true)} requireAuth={requireAuth} saved={saved} onToggleSave={toggleSaved} loading={loading} notify={notify}/ >}{page==='admin'&&role==='admin'&&<AdminPanel notify={notify} onRefreshPosts={loadPosts}/ >}{page==='assistant'&&<Assistant user={user} notify={notify}/ >}{page==='education'&&<Education user={user} role={role} notify={notify} openAuth={()=>setAuthOpen(true)}/>}</main>{motionPanel&&<section className="motion-notification-panel"><div className="motion-notification-head"><b>Thông báo Motion Insight</b><button className="icon-button" onClick={()=>setMotionPanel(false)} aria-label="Đóng thông báo"><X size={17}/></button></div>{motionEvents.length===0?<p>Chưa có thông báo trong phiên này.</p>:<>{motionEvents.map(e=><div className={"motion-event "+e.level} key={e.id}><strong>Ghi nhận chuyển động lặp lại · {e.channel||'Tín hiệu'}</strong><small>{new Date(e.time).toLocaleTimeString('vi-VN')} · {e.frequency} chu kỳ/phút (ước tính)</small><p>Chỉ là tín hiệu thử nghiệm, không xác định tic hoặc bệnh lý.</p></div>)}<button className="btn btn-outline small" onClick={()=>setMotionEvents([])}>Xóa lịch sử phiên</button></>}</section>}<footer className="footer">© 2026 TICare · Nền tảng thông tin và hỗ trợ giáo viên · Không thay thế đánh giá chuyên môn y tế</footer></div><nav className="mobile-bottom-nav" aria-label="Điều hướng TICare trên điện thoại">{NAV.map(n=><button type="button" key={n.id} className={page===n.id?"active":""} onClick={()=>go(n.id)} aria-current={page===n.id?"page":undefined}><n.icon size={20}/><span>{n.id==="home"?"Trang chủ":n.id==="motion"?"Motion":n.id==="community"?"Cộng đồng":n.id==="assistant"?"Chatbot":"Education"}</span></button>)}</nav>{authOpen&&<AuthModal onClose={()=>setAuthOpen(false)} onSuccess={u=>{setUser(u);setAuthOpen(false);notify('Đăng nhập thành công!')}} notify={notify}/ >}{profileOpen&&user&&<ProfileModal profile={profile} user={user} posts={posts} saved={saved} onClose={()=>setProfileOpen(false)} onUpdate={updateProfile} onGoMyPosts={()=>{setProfileOpen(false);setCommunityView('mine');go('community');}}/>}{resetOpen&&<ResetPasswordModal onClose={()=>setResetOpen(false)} notify={notify}/>}{toast&&<div className="toast"><Info size={18}/>{toast}<button onClick={()=>setToast('')}><X size={16}/></button></div>}</div>}
 function Heading({eyebrow,title,desc,action}){return <div className="page-heading"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1>{desc&&<p>{desc}</p>}</div>{action}</div>}
 function Home({go,posts}){return <><div className="hero"><div className="hero-content"><span className="hero-tag"><span className="glow-dot"/> NỀN TẢNG GIÁO DỤC HÒA NHẬP</span><h1>Hiểu đúng để<br/><em>đồng hành tốt hơn.</em></h1><p>TICare kết nối công nghệ, tri thức và sự thấu cảm — hỗ trợ giáo viên tạo nên một lớp học nơi mỗi sự khác biệt đều được tôn trọng.</p><div className="hero-buttons"><button className="btn btn-mint" onClick={()=>go('assistant')}>Khám phá trợ lý AI <ArrowRight size={17}/></button><button className="btn btn-ghost" onClick={()=>go('motion')}>Thử camera <ScanEye size={17}/></button></div></div><div className="hero-art"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="heart-core"><HeartHandshake size={70} strokeWidth={1.4}/></div><div className="floating f1"><BookOpen size={19}/> Kiến thức</div><div className="floating f2"><UsersRound size={19}/> Cộng đồng</div><div className="floating f3"><Activity size={19}/> Công nghệ</div></div></div><div className="section-row"><div><h2>Khám phá TICare</h2><p>Mọi công cụ cần thiết, trong một không gian thống nhất.</p></div></div><div className="feature-grid">{[{id:'motion',icon:ScanEye,color:'teal',title:'Quan sát vận động',desc:'Camera nhận diện điểm khớp và mô tả tín hiệu chuyển động lặp lại.'},{id:'community',icon:UsersRound,color:'blue',title:'Cộng đồng giáo dục',desc:'Chia sẻ bài viết, tài liệu và kinh nghiệm hỗ trợ học sinh.'},{id:'assistant',icon:Bot,color:'violet',title:'Trợ lý thông tin AI',desc:'Tra cứu, diễn giải tiếng Việt và dẫn nguồn kiến thức về tic.'},{id:'education',icon:GraduationCap,color:'amber',title:'TICare Education',desc:'Bài học, tình huống lớp học và hướng dẫn giáo dục hòa nhập.'}].map(x=><button className="feature-card" key={x.id} onClick={()=>go(x.id)}><div className={'feature-icon '+x.color}><x.icon size={24}/></div><h3>{x.title}</h3><p>{x.desc}</p><span>Khám phá <ArrowRight size={15}/></span></button>)}</div><div className="home-lower"><div className="panel"><div className="panel-title"><h3>Bài viết mới từ cộng đồng</h3><button className="link-button" onClick={()=>go('community')}>Xem tất cả <ArrowRight size={15}/></button></div>{posts.slice(0,3).map(p=><div className="compact-post" key={p.id}><span className="post-category">{p.category}</span><b>{p.title}</b><small>{p.author} · {fmt(p.created_at)}</small></div>)}</div><div className="panel tip-panel"><div className="tip-icon"><Heart size={24}/></div><h3>Một lời nhắc nhỏ</h3><p>Không phải mọi chuyển động lặp lại đều là tic. Một công cụ quan sát chỉ có thể hỗ trợ mô tả chuyển động — không thể thay thế đánh giá của chuyên gia.</p><button className="link-button" onClick={()=>go('education')}>Tìm hiểu thêm <ArrowRight size={15}/></button></div></div></>}
 
@@ -975,68 +975,308 @@ function AdminPanel({notify,onRefreshPosts}) {
 }
 
 function Assistant({user,notify}){const[question,setQuestion]=useState(''),[messages,setMessages]=useState([]),[busy,setBusy]=useState(false),[showTopics,setShowTopics]=useState(true);const bottom=useRef(null);useEffect(()=>{bottom.current?.scrollIntoView({behavior:'smooth'});},[messages,busy]);function ask(q){if(!q.trim()||busy)return;setQuestion('');const result=localAnswer(q);setMessages(p=>[...p,{role:'user',text:q},{role:'assistant',text:result.answer,sources:result.sources||[],mode:'demo',topic:result.topic,note:result.note}]);}return <><Heading eyebrow="THƯ VIỆN TRI THỨC · DEMO OFFLINE" title="Trợ lý kiến thức TICare" desc="Khám phá câu trả lời được biên soạn sẵn về tic và giáo dục hòa nhập. Không dùng API trả phí, không chẩn đoán."/><div className="assistant-shell"><div className="chat-main"><div className="chat-top"><div className="chat-avatar"><Bot size={22}/></div><div><b>TICare Knowledge Assistant</b><small>Thư viện trả lời theo chủ đề · Không phải AI trực tuyến</small></div><span className="chat-tag"><ShieldCheck size={13}/> Chế độ demo miễn phí</span></div><div style={{padding:'12px 18px',borderBottom:'1px solid #e2e8f0',display:'flex',gap:10,alignItems:'center',justifyContent:'space-between',flexWrap:'wrap'}}><span style={{fontSize:13,color:'#475569'}}>15 chủ đề kiến thức, không cần API key hoặc mật khẩu.</span><button type="button" className="btn btn-outline small" onClick={()=>setShowTopics(v=>!v)}>{showTopics?'Ẩn danh sách câu hỏi':'Hiện danh sách câu hỏi'}</button></div>{showTopics&&<div style={{padding:'14px 18px',borderBottom:'1px solid #e2e8f0',maxHeight:245,overflowY:'auto'}}>{TOPIC_GROUPS.map(group=><div key={group.title} style={{marginBottom:12}}><b style={{display:'block',fontSize:13,marginBottom:7}}>{group.title}</b><div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{group.ids.map(id=>{const t=QUESTION_BANK.find(x=>x.id===id);return t?<button key={id} type="button" className="btn btn-outline small" onClick={()=>ask(t.examples[0])} style={{whiteSpace:'normal',textAlign:'left'}}>{t.title}</button>:null})}</div></div>)}</div>}<div className="chat-history">{messages.length===0&&<div className="chat-welcome"><div className="big-bot"><Bot size={34}/></div><h2>Chào mừng đến thư viện TICare!</h2><p>Chọn câu hỏi mẫu hoặc nhập câu hỏi theo chủ đề. Đây là bản minh họa nội dung biên soạn, không tạo câu trả lời bằng AI.</p><div className="suggestions">{SUGGESTIONS.slice(0,6).map(s=><button key={s} onClick={()=>ask(s)}>{s}<ArrowRight size={14}/></button>)}</div></div>}{messages.map((m,i)=><div className={'chat-bubble-row '+m.role} key={i}>{m.role==='assistant'&&<div className="tiny-bot"><Bot size={17}/></div>}<div className={'chat-bubble '+m.role}><div className="chat-text" style={{whiteSpace:'pre-line'}}>{m.text}</div>{m.role==='assistant'&&<><div className="sources"><b><BookOpen size={15}/> Nguồn đọc thêm (không tra cứu trực tiếp)</b>{m.sources?.map((s,j)=><a key={j} href={s.url} target="_blank" rel="noreferrer"><ExternalLink size={13}/>{s.name||s.title||s.url}</a>)}</div><div className="answer-note">● Câu trả lời mẫu · {m.topic?m.topic+' · ':''}{m.note}</div></>}</div></div>)}<div ref={bottom}/></div><form className="chat-input" onSubmit={e=>{e.preventDefault();ask(question)}}><input value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Hỏi về tic, giáo dục hòa nhập, Motion Insight..."/><button disabled={!question.trim()} className="btn btn-primary"><Send size={18}/></button></form><div className="chat-disclaimer"><Info size={14}/> Trợ lý này hoạt động bằng thư viện câu trả lời mẫu, không gọi AI trực tuyến và không truy cập Internet. AI thực sự là hướng phát triển tương lai.</div></div><aside className="chat-side"><div className="panel"><h3>Nguyên tắc trả lời</h3><div className="principle"><CheckCircle2 size={17}/> Thông tin giáo dục bằng tiếng Việt</div><div className="principle"><CheckCircle2 size={17}/> Nguồn để tự đọc thêm</div><div className="principle"><CheckCircle2 size={17}/> Không chẩn đoán</div><div className="principle"><CheckCircle2 size={17}/> Không phân tích camera</div></div><div className="panel"><h3>Thư viện nguồn</h3>{SOURCES.map(s=><a className="source-link" href={s.url} key={s.url} target="_blank" rel="noreferrer"><BookOpen size={17}/><span>{s.name}</span><ExternalLink size={13}/></a>)}</div></aside></div></>}
-function Motion({onRunningChange,onMotionEvent,stopToken}){const video=useRef(null),canvas=useRef(null),landmarker=useRef(null),stream=useRef(null),frame=useRef(null),history=useRef([]),lastSample=useRef(0);const[running,setRunning]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[persons,setPersons]=useState(0),[signal,setSignal]=useState('Chưa có dữ liệu'),[frequency,setFrequency]=useState(null),[elapsed,setElapsed]=useState(0),[started,setStarted]=useState(0);const active=useRef(false),startTime=useRef(0),levelSince=useRef(null),lastAlert=useRef(-Infinity),currentLevel=useRef('normal'),eventCb=useRef(onMotionEvent),runningCb=useRef(onRunningChange);
-const [noticeThreshold,setNoticeThreshold]=useState(35),[warningThreshold,setWarningThreshold]=useState(85),[holdSeconds,setHoldSeconds]=useState(5),[cooldownSeconds,setCooldownSeconds]=useState(60),[systemNotifications,setSystemNotifications]=useState(false),[soundEnabled,setSoundEnabled]=useState(false);
-const config=useRef({noticeThreshold,warningThreshold,holdSeconds,cooldownSeconds,systemNotifications,soundEnabled});
-useEffect(()=>{config.current={noticeThreshold,warningThreshold,holdSeconds,cooldownSeconds,systemNotifications,soundEnabled};eventCb.current=onMotionEvent;runningCb.current=onRunningChange},[noticeThreshold,warningThreshold,holdSeconds,cooldownSeconds,systemNotifications,soundEnabled,onMotionEvent,onRunningChange]);
-const emit=useCallback((level,f)=>{const entry={id:crypto.randomUUID(),level,frequency:f,time:Date.now()};eventCb.current?.(entry);const title=level==='warning'?'TICare: Tần suất chuyển động cao':'TICare: Ghi nhận chuyển động lặp lại';const body=`Tín hiệu thử nghiệm: khoảng ${f} chu kỳ/phút. Không phải kết luận về tic.`;if(config.current.systemNotifications&&document.hidden&&'Notification' in window&&Notification.permission==='granted'){try{new Notification(title,{body,tag:'ticare-motion'})}catch(e){console.warn('Thông báo hệ thống không khả dụng',e)}}if(level==='warning'&&config.current.soundEnabled){try{const Ctx=window.AudioContext||window.webkitAudioContext;if(Ctx){const ac=new Ctx(),osc=ac.createOscillator(),gain=ac.createGain();osc.connect(gain);gain.connect(ac.destination);osc.frequency.value=540;gain.gain.value=.025;osc.start();osc.stop(ac.currentTime+.12);osc.onended=()=>ac.close()}}catch(e){console.warn('Âm báo không khả dụng',e)}}},[]);
-const evaluate=useCallback((f,now)=>{const cfg=config.current;const next=f===null?'normal':f>=cfg.warningThreshold?'warning':f>=cfg.noticeThreshold?'notice':'normal';if(next==='normal'){currentLevel.current='normal';levelSince.current=null;return}if(currentLevel.current!==next){currentLevel.current=next;levelSince.current=now;return}if(levelSince.current!==null&&now-levelSince.current>=cfg.holdSeconds*1000&&now-lastAlert.current>=cfg.cooldownSeconds*1000){lastAlert.current=now;levelSince.current=now;emit(next,f)}},[emit]);
-async function requestNotifications(){if(!('Notification' in window)){setError('Trình duyệt không hỗ trợ thông báo hệ thống.');return}const result=await Notification.requestPermission();setSystemNotifications(result==='granted');if(result!=='granted')setError('Chưa cấp quyền thông báo hệ thống. Vẫn có thể xem thông báo trong TICare.')}
-const estimate=(arr)=>{if(arr.length<20)return null;const v=arr.map(x=>x.y);const sorted=[...v].sort((a,b)=>a-b);const amp=sorted[Math.floor(.95*(sorted.length-1))]-sorted[Math.floor(.05*(sorted.length-1))];if(amp<.018)return null;const smooth=v.map((_,i)=>{const l=Math.max(0,i-2),r=Math.min(v.length-1,i+2);return v.slice(l,r+1).reduce((a,b)=>a+b,0)/(r-l+1)});const mean=smooth.reduce((a,b)=>a+b,0)/smooth.length;const peaks=[];for(let i=2;i<smooth.length-2;i++)if(smooth[i]>mean+amp*.12&&smooth[i]>=smooth[i-1]&&smooth[i]>smooth[i+1]&&(!peaks.length||arr[i].t-arr[peaks.at(-1)].t>.35))peaks.push(i);if(peaks.length<3)return null;const periods=peaks.slice(1).map((idx,j)=>arr[idx].t-arr[peaks[j]].t);const avg=periods.reduce((a,b)=>a+b,0)/periods.length;const cv=Math.sqrt(periods.reduce((a,b)=>a+(b-avg)**2,0)/periods.length)/avg;if(cv>.42||avg<.3||avg>3)return null;return +(60/avg).toFixed(1)};
-const stop=useCallback(()=>{active.current=false;if(frame.current)cancelAnimationFrame(frame.current);frame.current=null;stream.current?.getTracks().forEach(t=>t.stop());stream.current=null;if(video.current)video.current.srcObject=null;landmarker.current?.close();landmarker.current=null;setRunning(false);runningCb.current?.(false);currentLevel.current='normal';levelSince.current=null;setPersons(0);setSignal('Đã dừng');setFrequency(null);history.current=[];const c=canvas.current;if(c)c.getContext('2d')?.clearRect(0,0,c.width,c.height)},[]);useEffect(()=>()=>stop(),[stop]);useEffect(()=>{if(stopToken>0)stop()},[stopToken,stop]);
-async function start(){if(busy)return;setBusy(true);setError('');history.current=[];try{if(!navigator.mediaDevices?.getUserMedia)throw Error('Trình duyệt cần HTTPS hoặc localhost để sử dụng camera.');const{PoseLandmarker,FilesetResolver,DrawingUtils}=await import('@mediapipe/tasks-vision');const fileset=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm');const lm=await PoseLandmarker.createFromOptions(fileset,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'CPU'},runningMode:'VIDEO',numPoses:3,minPoseDetectionConfidence:.5,minTrackingConfidence:.5});landmarker.current=lm;const s=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:640},height:{ideal:480},facingMode:'user'},audio:false});stream.current=s;video.current.srcObject=s;await video.current.play();active.current=true;setRunning(true);runningCb.current?.(true);startTime.current=Date.now();const draw=new DrawingUtils(canvas.current.getContext('2d'));let previous=0;const loop=()=>{if(!active.current||!video.current)return;const v=video.current,c=canvas.current;if(v.readyState>=2){c.width=v.videoWidth;c.height=v.videoHeight;const ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);const now=performance.now();if(now>previous){previous=now;const res=lm.detectForVideo(v,now);setPersons(res.landmarks.length);for(const pts of res.landmarks){draw.drawConnectors(pts,PoseLandmarker.POSE_CONNECTIONS,{color:'#56e3c2',lineWidth:2});draw.drawLandmarks(pts,{color:'#f8ffff',fillColor:'#0e8b83',radius:2})}if(now-lastSample.current>90){lastSample.current=now;const pts=res.landmarks[0];if(pts&&pts[0]&&pts[11]&&pts[12]&&pts[23]&&pts[24]){const shoulders=(pts[11].y+pts[12].y)/2,hips=(pts[23].y+pts[24].y)/2,scale=Math.max(.05,Math.abs(hips-shoulders));const val=(pts[0].y-shoulders)/scale;history.current.push({t:now/1000,y:val});history.current=history.current.filter(a=>now/1000-a.t<6);const f=estimate(history.current);setFrequency(f);evaluate(f,now);setSignal(f?'Phát hiện tín hiệu có tính chu kỳ':'Chưa thấy chu kỳ ổn định')}else{history.current=[];setFrequency(null);evaluate(null,now);setSignal('Chưa đủ điểm khớp để phân tích')}setElapsed(Math.round((Date.now()-startTime.current)/1000))}}}frame.current=requestAnimationFrame(loop)};frame.current=requestAnimationFrame(loop)}catch(e){stop();setError(e.message||'Không thể khởi động camera')}finally{setBusy(false)}}
-return <><Heading eyebrow="MOTION INSIGHT · BẢN THỬ NGHIỆM" title="Quan sát biểu hiện vận động" desc="MediaPipe xác định các điểm khớp cơ thể; thuật toán thử nghiệm tìm tín hiệu chuyển động có tính chu kỳ. Không xác định tic hoặc bệnh lý."/><div className="motion-layout"><div className="panel camera-panel"><div className="camera-header"><div><span className="camera-status"><span className={'status-dot '+(running?'green':'')}/>{running?'CAMERA ĐANG HOẠT ĐỘNG':'CAMERA CHƯA BẬT'}</span></div><span className="camera-badge">Xử lý trên thiết bị</span></div><div className="camera-stage">{!running&&<div className="camera-empty"><div className="camera-reticle" aria-hidden="true"><span/><span/><span/><span/></div><div className="camera-placeholder"><ScanEye size={39}/></div><span className="camera-ready">MOTION INSIGHT · SẴN SÀNG</span><h3>Không gian quan sát</h3><p>Camera hiện đang tắt. Nhấn <b>Bật camera</b> bên dưới và cấp quyền để bắt đầu quan sát.</p><div className="camera-empty-note"><ShieldCheck size={15}/> Xử lý trên thiết bị · Không lưu video mặc định</div></div>}<video ref={video} autoPlay playsInline muted style={{display:running?'block':'none'}}/><canvas ref={canvas} style={{display:running?'block':'none'}}/></div>{error&&<div className="error-message"><AlertTriangle size={17}/>{error}</div>}<div className="camera-footer"><div className="camera-privacy"><ShieldCheck size={18}/> Video không được tải lên máy chủ hoặc lưu mặc định.</div>{running?<button className="btn btn-danger" onClick={stop}><CameraOff size={17}/> Dừng camera</button>:<button className="btn btn-primary" disabled={busy} onClick={start}>{busy?<LoaderCircle className="spin" size={17}/>:<Camera size={17}/>} {busy?'Đang tải mô hình...':'Bật camera'}</button>}</div></div><aside className="motion-side"><div className="panel"><h3>Thông tin phiên quan sát</h3><div className="metric"><span>Số người nhận diện</span><b>{persons}</b></div><div className="metric"><span>Thời lượng phiên</span><b>{running?elapsed:0}s</b></div><div className="metric"><span>Chu kỳ ước tính</span><b>{frequency?frequency+' lần/phút':'—'}</b></div><div className="signal-box"><Activity size={18}/><span>{signal}</span></div><p className="small-text muted">Chỉ phân tích một tín hiệu chuyển động đầu của người đầu tiên được phát hiện. Khi có nhiều người hoặc che khuất, kết quả có thể không ổn định.</p></div><div className="panel motion-settings"><h3><BellRing size={18}/> Thông báo & cảnh báo</h3><p className="small-text muted">Các ngưỡng dưới đây chỉ phục vụ thử nghiệm kỹ thuật, không phải ngưỡng y khoa. Chỉ phân tích người đầu tiên được nhận diện.</p><label>Thông báo từ {noticeThreshold} chu kỳ/phút<input type="range" min="10" max={warningThreshold-5} step="5" value={noticeThreshold} onChange={e=>setNoticeThreshold(Number(e.target.value))}/></label><label>Cảnh báo từ {warningThreshold} chu kỳ/phút<input type="range" min={noticeThreshold+5} max="160" step="5" value={warningThreshold} onChange={e=>setWarningThreshold(Number(e.target.value))}/></label><label>Giữ mức liên tục {holdSeconds} giây<input type="range" min="2" max="15" value={holdSeconds} onChange={e=>setHoldSeconds(Number(e.target.value))}/></label><label>Chờ giữa hai thông báo: {cooldownSeconds} giây<input type="range" min="20" max="180" step="10" value={cooldownSeconds} onChange={e=>setCooldownSeconds(Number(e.target.value))}/></label><label className="motion-toggle"><input type="checkbox" checked={soundEnabled} onChange={e=>setSoundEnabled(e.target.checked)}/> Âm nhẹ khi cảnh báo cao</label><label className="motion-toggle"><input type="checkbox" checked={systemNotifications} onChange={e=>e.target.checked?requestNotifications():setSystemNotifications(false)}/> Thông báo trình duyệt khi chuyển tab</label><p className="small-text muted">Chuyển chức năng trong TICare không dừng camera. Tab nền có thể bị trình duyệt hạn chế; đóng trang sẽ dừng quan sát.</p></div><div className="panel safety-panel"><AlertTriangle size={22}/><h3>Giới hạn quan trọng</h3><p>Chuyển động lặp lại có thể xuất hiện vì nhiều nguyên nhân. Kết quả thử nghiệm này không được dùng để nhận diện học sinh mắc tic, đánh giá sức khỏe hay đưa ra quyết định cá nhân.</p></div></aside></div></>}
-const ED_AGES=[{id:'mam_non',label:'Mầm non'},{id:'lop_1',label:'Lớp 1'},{id:'lop_2',label:'Lớp 2'},{id:'lop_3',label:'Lớp 3'}];
-const ED_GAMES=[
-  {id:'kindness',title:'Lời nói tử tế',age:'mam_non',minutes:5,icon:'💚',desc:'Chọn cách cư xử thân thiện với bạn bè.',questions:[
-    {q:'Khi bạn làm rơi bút, em sẽ...',answers:['Giúp bạn nhặt bút','Cười chê bạn','Giấu bút của bạn'],correct:0,explain:'Giúp đỡ người khác là hành động tử tế.'},
-    {q:'Khi một bạn có cử động khác với mình, em nên...',answers:['Bắt chước bạn','Tôn trọng và không trêu chọc','Chỉ trỏ, cười đùa'],correct:1,explain:'Ai cũng xứng đáng được tôn trọng, dù có những khác biệt.'},
-    {q:'Khi bạn muốn chơi cùng nhóm, em có thể...',answers:['Mời bạn tham gia','Đuổi bạn đi','Làm ngơ để bạn buồn'],correct:0,explain:'Lời mời thân thiện giúp mọi người cảm thấy được chào đón.'}
-  ]},
-  {id:'classmate',title:'Bạn sẽ làm gì?',age:'lop_2',minutes:8,icon:'🌻',desc:'Trò chơi tình huống về sự tôn trọng trong lớp.',questions:[
-    {q:'Em thấy một bạn bị trêu chọc vì cử động lặp lại. Em nên làm gì?',answers:['Hùa theo cho vui','Can ngăn và báo người lớn đáng tin cậy','Quay video đăng lên mạng'],correct:1,explain:'Không trêu chọc hoặc ghi hình chia sẻ; hãy hỗ trợ bạn một cách tôn trọng.'},
-    {q:'Bạn xin thêm ít thời gian để hoàn thành bài. Em nên...',answers:['Nói bạn lười biếng','Làm bài hộ bạn','Tôn trọng sự hỗ trợ mà giáo viên sắp xếp'],correct:2,explain:'Mỗi bạn có thể cần cách học phù hợp với mình.'},
-    {q:'Khi chưa hiểu vì sao bạn có cử động khác thường, em nên...',answers:['Tự kết luận bạn mắc bệnh','Không suy đoán và cư xử bình thường','Hỏi cả lớp xem ai biết'],correct:1,explain:'Không nên tự suy đoán hoặc công khai chuyện riêng của người khác.'}
-  ]},
-  {id:'helping',title:'Bàn tay giúp bạn',age:'lop_1',minutes:5,icon:'🤝',desc:'Học cách giúp bạn qua những tình huống gần gũi.',questions:[
-    {q:'Bạn chưa tìm thấy hộp bút. Em nên...',answers:['Giúp bạn tìm','Cười bạn','Giấu hộp bút'],correct:0,explain:'Giúp bạn tìm đồ là hành động tử tế.'},
-    {q:'Bạn có cách nói hoặc cử động khác mình. Em sẽ...',answers:['Trêu bạn','Tôn trọng và lắng nghe','Bắt chước bạn'],correct:1,explain:'Mỗi người có đặc điểm riêng và xứng đáng được tôn trọng.'}
-  ]},
-  {id:'respect-choices',title:'Lựa chọn tôn trọng',age:'lop_3',minutes:8,icon:'🌟',desc:'Tập ứng xử khi gặp tình huống về sự khác biệt.',questions:[
-    {q:'Một bạn bị trêu chọc vì biểu hiện khác với mọi người. Em sẽ...',answers:['Cùng cười','Nhờ giáo viên giúp và không trêu chọc','Đăng chuyện lên mạng'],correct:1,explain:'Can thiệp an toàn, không công khai thông tin của bạn.'},
-    {q:'Khi bạn cần cách học khác để tham gia bài học, em nên...',answers:['Tôn trọng sự sắp xếp của giáo viên','Cho rằng bạn được thiên vị','Không chơi với bạn'],correct:0,explain:'Sự hỗ trợ phù hợp giúp mọi người có cơ hội học tập công bằng.'}
-  ]}
+// Motion Insight: các kênh tín hiệu kỹ thuật độc lập, KHÔNG phải bộ phân loại tic.
+const MOTION_CHANNELS = [
+  {id:'body',label:'Toàn thân (33 điểm)',color:'#14b8a6'},
+  {id:'head',label:'Đầu / cổ',color:'#0d9488'},
+  {id:'shoulder',label:'Vai',color:'#6366f1'},
+  {id:'left',label:'Tay trái',color:'#f59e0b'},
+  {id:'right',label:'Tay phải',color:'#ec4899'},
+  {id:'blink',label:'Chớp mắt',color:'#06b6d4'},
+  {id:'face',label:'Cơ mặt / hàm',color:'#a855f7'}
 ];
-const ED_SLIDES=[
-  {id:'kindness-slides',title:'Lớp học của những lời tử tế',age:'mam_non',desc:'Bộ slide đơn giản cho hoạt động 10 phút.',pages:[
-    {title:'Lời nói tử tế',body:'Hôm nay chúng mình học cách quan tâm và tôn trọng bạn bè.',emoji:'💚'},
-    {title:'Mỗi bạn là một bông hoa',body:'Chúng mình có thể khác nhau, nhưng ai cũng đáng quý.',emoji:'🌼'},
-    {title:'Khi bạn gặp khó khăn',body:'Hãy hỏi: “Mình có thể giúp bạn không?”',emoji:'🤝'},
-    {title:'Cùng chọn lời nói đẹp',body:'“Mình chơi cùng nhé!” · “Cảm ơn bạn!” · “Bạn làm tốt lắm!”',emoji:'🌈'},
-    {title:'Lời hứa của lớp mình',body:'Không trêu chọc. Biết lắng nghe. Sẵn sàng giúp đỡ.',emoji:'⭐'}
-  ]},
-  {id:'respect-slides',title:'Tôn trọng sự khác biệt',age:'lop_2',desc:'Bộ slide tình huống cho lớp 1–3.',pages:[
-    {title:'Ai cũng có điểm khác biệt',body:'Sự khác biệt không phải lý do để chê cười người khác.',emoji:'🌍'},
-    {title:'Một số cử động không chủ ý',body:'Có những cử động một người không dễ tự kiểm soát. Chúng ta không tự đoán nguyên nhân.',emoji:'🫶'},
-    {title:'Tình huống lớp học',body:'Nếu thấy một bạn bị bắt chước, trêu chọc, em sẽ làm gì?',emoji:'💬'},
-    {title:'Cách giúp bạn',body:'Dừng việc trêu chọc, cư xử tôn trọng và tìm sự hỗ trợ từ giáo viên.',emoji:'🤝'},
-    {title:'Thông điệp',body:'Hiểu sự khác biệt – tôn trọng mỗi người – cùng nhau học tốt.',emoji:'✨'}
-  ]},
-  {id:'help-slides',title:'Chúng mình cùng giúp nhau',age:'lop_1',desc:'5 trang ngắn, hình ảnh và câu dễ nhớ.',pages:[
-    {title:'Cùng nhau đến lớp',body:'Mỗi bạn là một phần quan trọng của lớp mình.',emoji:'🏫'},
-    {title:'Một việc tốt nhỏ',body:'Hỏi bạn: “Mình giúp được gì không?”',emoji:'💛'},
-    {title:'Biết lắng nghe',body:'Không cười chê khi bạn có điều khác biệt.',emoji:'👂'},
-    {title:'Cùng hợp tác',body:'Rủ bạn cùng chơi và học bài.',emoji:'🤝'},
-    {title:'Thông điệp',body:'Tử tế với mọi người, mỗi ngày.',emoji:'⭐'}
-  ]},
-  {id:'class3-slides',title:'Lớp học không trêu chọc',age:'lop_3',desc:'5 trang cho hoạt động thảo luận lớp 3.',pages:[
-    {title:'Một lớp học thân thiện',body:'Ai cũng có quyền được học tập an toàn và tôn trọng.',emoji:'🌻'},
-    {title:'Sự khác biệt là bình thường',body:'Chúng ta không kết luận nguyên nhân cử động của người khác.',emoji:'🌈'},
-    {title:'Khi chứng kiến trêu chọc',body:'Không hùa theo, không quay video chia sẻ.',emoji:'🛑'},
-    {title:'Cách hỗ trợ',body:'An ủi bạn và tìm thầy cô đáng tin cậy.',emoji:'🤝'},
-    {title:'Lời hứa của cả lớp',body:'Tôn trọng – Lắng nghe – Giúp đỡ.',emoji:'💚'}
-  ]}
-];
+
+function motionFrequency(samples, sensitivity=60) {
+  if(samples.length<17) return null;
+  // Mẫu cách nhau ~100ms, thời gian thực được dùng để tính chu kỳ.
+  const values=samples.map(s=>s.value);
+  const smoothed=values.map((_,i)=>{
+    const a=Math.max(0,i-1),b=Math.min(values.length-1,i+1);
+    return values.slice(a,b+1).reduce((x,y)=>x+y,0)/(b-a+1);
+  });
+  const sorted=[...smoothed].sort((x,y)=>x-y);
+  const amp=sorted[Math.floor(sorted.length*.9)]-sorted[Math.floor(sorted.length*.1)];
+  const minAmp=.075-(sensitivity/100)*.065; // 0.01 ... 0.075 (tín hiệu chuẩn hóa)
+  if(amp<minAmp) return null;
+  const avg=smoothed.reduce((x,y)=>x+y,0)/smoothed.length;
+  const peaks=[];
+  for(let i=2;i<smoothed.length-2;i++) {
+    const t=samples[i].t;
+    if(smoothed[i]>avg+amp*.13 && smoothed[i]>=smoothed[i-1] && smoothed[i]>smoothed[i+1] &&
+      (!peaks.length || t-samples[peaks.at(-1)].t>.38)) peaks.push(i);
+  }
+  if(peaks.length<3) return null;
+  const durations=peaks.slice(1).map((id,j)=>samples[id].t-samples[peaks[j]].t);
+  const mean=durations.reduce((x,y)=>x+y,0)/durations.length;
+  if(mean<.38||mean>3.2) return null;
+  const cv=Math.sqrt(durations.reduce((x,y)=>x+(y-mean)**2,0)/durations.length)/mean;
+  if(cv>(.27+sensitivity*.003)) return null;
+  return +Math.min(155,60/mean).toFixed(1);
+}
+
+function Motion({onRunningChange,onMotionEvent,stopToken}) {
+  const video=useRef(null),canvas=useRef(null),poseModel=useRef(null),faceModel=useRef(null);
+  const mediaStream=useRef(null),frame=useRef(null),active=useRef(false),fileUrl=useRef(null);
+  const samples=useRef({}),series=useRef([]),lastAt=useRef(0),startedAt=useRef(0),previousPose=useRef(null);
+  const activeLevel=useRef({}),lastNotify=useRef({}),callbacks=useRef({});
+  const [running,setRunning]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  const [source,setSource]=useState('camera'),[persons,setPersons]=useState(0),[faceAvailable,setFaceAvailable]=useState(false);
+  const [elapsed,setElapsed]=useState(0),[status,setStatus]=useState('Chưa có dữ liệu'),[measurements,setMeasurements]=useState({});
+  const [sensitivity,setSensitivity]=useState(60),[threshold,setThreshold]=useState(20);
+  const [holdSeconds,setHoldSeconds]=useState(2),[cooldownSeconds,setCooldownSeconds]=useState(20);
+  const [sound,setSound]=useState(true),[desktopNotice,setDesktopNotice]=useState(false);
+  const [overlay,setOverlay]=useState(null),[snapshot,setSnapshot]=useState([]);
+  const [chartChannel,setChartChannel]=useState('head');
+  const [showAllPoints,setShowAllPoints]=useState(true);
+  callbacks.current={onRunningChange,onMotionEvent,sensitivity,threshold,holdSeconds,cooldownSeconds,sound,desktopNotice};
+
+  function clearModels(){
+    try{poseModel.current?.close()}catch{}
+    try{faceModel.current?.close()}catch{}
+    poseModel.current=null;faceModel.current=null;
+  }
+  const stop=useCallback(()=>{
+    active.current=false;
+    if(frame.current)cancelAnimationFrame(frame.current);
+    frame.current=null;
+    mediaStream.current?.getTracks().forEach(t=>t.stop());mediaStream.current=null;
+    if(video.current){video.current.pause();video.current.srcObject=null;video.current.removeAttribute('src');video.current.load()}
+    if(fileUrl.current){URL.revokeObjectURL(fileUrl.current);fileUrl.current=null}
+    clearModels();setRunning(false);callbacks.current.onRunningChange?.(false);
+    setPersons(0);setStatus('Đã dừng');
+  },[]);
+  useEffect(()=>()=>stop(),[stop]);
+  useEffect(()=>{if(stopToken>0)stop()},[stopToken,stop]);
+  useEffect(()=>{if(!overlay)return;const id=setTimeout(()=>setOverlay(null),7500);return()=>clearTimeout(id)},[overlay]);
+
+  function beep(){
+    if(!callbacks.current.sound)return;
+    try{
+      const AudioCtx=window.AudioContext||window.webkitAudioContext;
+      if(!AudioCtx)return;
+      const a=new AudioCtx(),o=a.createOscillator(),g=a.createGain();
+      o.type='sine';o.frequency.value=660;g.gain.value=.035;
+      o.connect(g);g.connect(a.destination);o.start();o.stop(a.currentTime+.23);
+      o.onended=()=>a.close();
+    }catch(e){console.debug('Âm báo bị trình duyệt chặn',e)}
+  }
+  function emit(channel,frequency){
+    const item={id:crypto.randomUUID(),channel,frequency,time:Date.now(),level:'warning'};
+    callbacks.current.onMotionEvent?.(item);
+    setOverlay(item);beep();
+    if(callbacks.current.desktopNotice && document.hidden && 'Notification' in window && Notification.permission==='granted'){
+      try{new Notification('TICare: tín hiệu chuyển động lặp lại',{body:`${channel} · ${frequency} chu kỳ/phút (ước tính). Không kết luận tic.`})}catch{}
+    }
+  }
+  function inspectSignal(id,frequency,now){
+    const cfg=callbacks.current;
+    if(frequency===null||frequency<cfg.threshold){delete activeLevel.current[id];return}
+    if(!activeLevel.current[id]){activeLevel.current[id]=now;return}
+    if(now-activeLevel.current[id] >= cfg.holdSeconds*1000 && now-(lastNotify.current[id]??-Infinity)>=cfg.cooldownSeconds*1000){
+      lastNotify.current[id]=now;activeLevel.current[id]=now;
+      emit(MOTION_CHANNELS.find(x=>x.id===id)?.label||id,frequency);
+    }
+  }
+  function getSignals(pts,face){
+    const signal={};
+    if(pts?.[11]&&pts?.[12]&&pts?.[23]&&pts?.[24]){
+      const mid=(i,j)=>({x:(pts[i].x+pts[j].x)/2,y:(pts[i].y+pts[j].y)/2});
+      const shoulders=mid(11,12),hips=mid(23,24);
+      const scale=Math.max(.065,Math.hypot(shoulders.x-hips.x,shoulders.y-hips.y));
+      const v=i=>pts[i]?.visibility===undefined||pts[i].visibility>.45;
+      // Gộp năng lượng dịch chuyển tương đối của 33 điểm (RMS), KHÔNG nhân tọa độ.
+      const normalized=pts.map(p=>({x:(p.x-hips.x)/scale,y:(p.y-hips.y)/scale,visibility:p.visibility??1}));
+      if(previousPose.current){
+        let sum=0,n=0;
+        for(let i=0;i<normalized.length;i++){
+          const old=previousPose.current[i],cur=normalized[i];
+          if(old && old.visibility>.45 && cur.visibility>.45){
+            sum+=(cur.x-old.x)**2+(cur.y-old.y)**2;n++;
+          }
+        }
+        if(n>=12)signal.body=Math.sqrt(sum/n);
+      }
+      previousPose.current=normalized;
+      // Tương quan so với thân người, giảm ảnh hưởng chuyển động chung của camera.
+      if(v(0))signal.head=(pts[0].x-shoulders.x)/scale;
+      if(v(11)&&v(12))signal.shoulder=(pts[11].y-pts[12].y)/scale;
+      if(v(15)&&v(13))signal.left=(pts[15].y-pts[13].y)/scale;
+      if(v(16)&&v(14))signal.right=(pts[16].y-pts[14].y)/scale;
+    }
+    if(!pts)previousPose.current=null;
+    const shapes=face?.faceBlendshapes?.[0]?.categories;
+    if(shapes?.length){
+      const get=n=>shapes.find(c=>c.categoryName===n)?.score||0;
+      signal.blink=Math.max(get('eyeBlinkLeft'),get('eyeBlinkRight'));
+      signal.face=Math.max(get('jawOpen'),get('browDownLeft'),get('browDownRight'),get('mouthFrownLeft'),get('mouthFrownRight'));
+    }
+    return signal;
+  }
+  async function start(upload){
+    if(busy)return;
+    stop();setBusy(true);setError('');setOverlay(null);setSnapshot([]);
+    samples.current={};series.current=[];previousPose.current=null;activeLevel.current={};lastNotify.current={};lastAt.current=0;
+    try{
+      const {PoseLandmarker,FaceLandmarker,FilesetResolver,DrawingUtils}=await import('@mediapipe/tasks-vision');
+      const vision=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');
+      poseModel.current=await PoseLandmarker.createFromOptions(vision,{
+        baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'CPU'},
+        runningMode:'VIDEO',numPoses:1,minPoseDetectionConfidence:.5,minTrackingConfidence:.5
+      });
+      try{
+        faceModel.current=await FaceLandmarker.createFromOptions(vision,{
+          baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',delegate:'CPU'},
+          runningMode:'VIDEO',numFaces:1,outputFaceBlendshapes:true
+        });
+        setFaceAvailable(true);
+      }catch(e){console.warn('Không tải được mô hình khuôn mặt, tiếp tục phân tích tư thế',e);setFaceAvailable(false)}
+      if(upload){
+        if(!upload.type.startsWith('video/'))throw Error('Vui lòng chọn tệp video hợp lệ.');
+        if(upload.size>100*1024*1024)throw Error('Video thử nghiệm tối đa 100 MB.');
+        fileUrl.current=URL.createObjectURL(upload);
+        video.current.src=fileUrl.current;
+        setSource('video');
+      }else{
+        if(!navigator.mediaDevices?.getUserMedia)throw Error('Camera yêu cầu HTTPS và trình duyệt hỗ trợ.');
+        mediaStream.current=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:640},height:{ideal:480},facingMode:'user'},audio:false});
+        video.current.srcObject=mediaStream.current;
+        setSource('camera');
+      }
+      await video.current.play();
+      const draw=new DrawingUtils(canvas.current.getContext('2d'));
+      active.current=true;setRunning(true);callbacks.current.onRunningChange?.(true);
+      startedAt.current=performance.now();
+      let lastTimestamp=-1;
+      const loop=()=>{
+        if(!active.current || !video.current)return;
+        const v=video.current,c=canvas.current;
+        if(v.ended){setStatus('Video đã phát hết');stop();return}
+        if(v.readyState>=2 && v.videoWidth>0 && v.currentTime!==lastTimestamp){
+          lastTimestamp=v.currentTime;
+          const now=performance.now();
+          if(now-lastAt.current>=100){
+            lastAt.current=now;
+            c.width=v.videoWidth;c.height=v.videoHeight;
+            const ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);
+            const pose=poseModel.current.detectForVideo(v,now);
+            const pts=pose.landmarks?.[0];setPersons(pose.landmarks?.length||0);
+            if(pts){
+              draw.drawConnectors(pts,PoseLandmarker.POSE_CONNECTIONS,{color:'#75e4cf',lineWidth:2});
+              if(showAllPointsRef.current)draw.drawLandmarks(pts,{color:'#faffff',fillColor:'#0e9e86',radius:2});
+            }
+            let face=null;
+            if(faceModel.current){
+              try{
+                face=faceModel.current.detectForVideo(v,now);
+                if(face?.faceLandmarks?.[0] && showAllPointsRef.current){
+                  draw.drawConnectors(face.faceLandmarks[0],FaceLandmarker.FACE_LANDMARKS_FACE_OVAL,{color:'#7dd3fc',lineWidth:1});
+                  draw.drawConnectors(face.faceLandmarks[0],FaceLandmarker.FACE_LANDMARKS_LEFT_EYEBROW,{color:'#7dd3fc',lineWidth:1});
+                  draw.drawConnectors(face.faceLandmarks[0],FaceLandmarker.FACE_LANDMARKS_RIGHT_EYEBROW,{color:'#7dd3fc',lineWidth:1});
+                  draw.drawConnectors(face.faceLandmarks[0],FaceLandmarker.FACE_LANDMARKS_LIPS,{color:'#7dd3fc',lineWidth:1});
+                  draw.drawConnectors(face.faceLandmarks[0],FaceLandmarker.FACE_LANDMARKS_LEFT_EYE,{color:'#7dd3fc',lineWidth:1});
+                  draw.drawConnectors(face.faceLandmarks[0],FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE,{color:'#7dd3fc',lineWidth:1});
+                }
+              }catch(e){console.debug('Tạm bỏ qua khung hình khuôn mặt',e)}
+            }
+            const vals=getSignals(pts,face),t=(now-startedAt.current)/1000;
+            const current={};
+            for(const ch of MOTION_CHANNELS){
+              const value=vals[ch.id];
+              if(!Number.isFinite(value)){delete samples.current[ch.id];inspectSignal(ch.id,null,now);continue}
+              const arr=samples.current[ch.id]||[];
+              arr.push({t,value});while(arr.length && t-arr[0].t>7)arr.shift();
+              samples.current[ch.id]=arr;
+              const f=motionFrequency(arr,callbacks.current.sensitivity);
+              current[ch.id]=f;
+              inspectSignal(ch.id,f,now);
+            }
+            series.current.push({t,...vals});
+            if(series.current.length>900)series.current.shift();
+            setMeasurements(current);
+            setSnapshot(series.current.slice(-70));
+            setElapsed(Math.round(t));
+            setStatus(Object.values(current).some(x=>x!==null)?'Đang ghi nhận chu kỳ chuyển động':'Đang phân tích / chưa có chu kỳ ổn định');
+          }
+        }
+        frame.current=requestAnimationFrame(loop);
+      };
+      frame.current=requestAnimationFrame(loop);
+    }catch(e){stop();setError(e.message||'Không thể khởi động Motion Insight')}
+    finally{setBusy(false)}
+  }
+  const showAllPointsRef=useRef(showAllPoints);showAllPointsRef.current=showAllPoints;
+  async function enableDesktop(){
+    if(!('Notification' in window)){setError('Trình duyệt không hỗ trợ thông báo hệ thống.');return}
+    const result=await Notification.requestPermission();setDesktopNotice(result==='granted');
+    if(result!=='granted')setError('Chưa cấp quyền thông báo hệ thống. Cảnh báo trong TICare vẫn hoạt động.');
+  }
+  function downloadCsv(){
+    if(!series.current.length)return;
+    const lines=['giay,body,head,shoulder,left,right,blink,face',...series.current.map(r=>[r.t.toFixed(2),...MOTION_CHANNELS.map(ch=>Number.isFinite(r[ch.id])?r[ch.id].toFixed(4):'')].join(','))];
+    const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'});
+    const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='ticare-motion-signals.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);
+  }
+  const chartData=snapshot.filter(p=>Number.isFinite(p[chartChannel]));
+  const values=chartData.map(p=>p[chartChannel]);
+  const low=Math.min(...values,0),high=Math.max(...values,1);
+  const points=chartData.map((p,i)=>`${16+(i/Math.max(1,chartData.length-1))*668},${130-((p[chartChannel]-low)/Math.max(.01,high-low))*106}`).join(' ');
+  function downloadChart(){
+    if(!chartData.length)return;
+    const label=MOTION_CHANNELS.find(x=>x.id===chartChannel)?.label||chartChannel;
+    const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="720" height="190" viewBox="0 0 720 190"><rect width="720" height="190" rx="12" fill="#0a2733"/><text x="18" y="22" fill="white" font-size="15">TICare Motion Insight — ${label}</text><polyline fill="none" stroke="#6ee7d3" stroke-width="3" points="${points}"/><text x="18" y="174" fill="#aac6cb" font-size="11">Tín hiệu thử nghiệm • không xác định tic • không phải dữ liệu y tế</text></svg>`;
+    const url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'})),a=document.createElement('a');a.href=url;a.download='ticare-bieu-do.svg';a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);
+  }
+  const top=Object.entries(measurements).filter(([,f])=>f!==null).sort((a,b)=>b[1]-a[1])[0];
+  return <div className="mi-v2">
+    <Heading eyebrow="MOTION INSIGHT · PHÂN TÍCH CHUYỂN ĐỘNG" title="Không gian quan sát" desc="Phân tích tín hiệu tại thiết bị. Đo chuyển động lặp lại, không xác định tic hay bệnh lý."/>
+    <div className="mi-v2-top">
+      <div className="mi-v2-stat"><span>Trạng thái</span><strong>{running?'Đang quan sát':'Sẵn sàng'}</strong><small>{status}</small></div>
+      <div className="mi-v2-stat"><span>Thời lượng</span><strong>{elapsed} giây</strong><small>Phiên hiện tại</small></div>
+      <div className="mi-v2-stat"><span>Tín hiệu nổi bật</span><strong>{top?`${top[1]} chu kỳ/phút`:'—'}</strong><small>{top?MOTION_CHANNELS.find(x=>x.id===top[0])?.label:'Chưa đủ dữ liệu'}</small></div>
+    </div>
+    <div className="mi-v2-layout">
+      <section className="mi-v2-main">
+        <div className="mi-v2-camera">
+          <div className="mi-v2-camera-top"><span className={'mi-v2-live '+(running?'on':'')}><span/> {running?'CAMERA / VIDEO ĐANG CHẠY':'CHƯA BẬT NGUỒN'}</span><span><ShieldCheck size={14}/> Xử lý cục bộ</span></div>
+          <div className="mi-v2-stage">
+            {!running&&<div className="mi-v2-placeholder"><div className="mi-v2-target"><ScanEye size={45}/></div><b>Motion Insight</b><h2>Sẵn sàng quan sát</h2><p>Bật webcam USB hoặc chọn một video thử nghiệm được phép sử dụng.</p><span>Phân tích chuyển động, không chẩn đoán tic</span></div>}
+            <video ref={video} playsInline muted autoPlay style={{display:running?'block':'none'}}/>
+            <canvas ref={canvas} style={{display:running?'block':'none'}}/>
+            {running&&<div className="mi-v2-stamp"><Activity size={15}/> {persons?`${persons} người được nhận diện`:'Đang tìm người trong khung hình'}</div>}
+            {overlay&&<div role="alert" className="mi-v2-alert"><div className="mi-v2-alert-icon"><BellRing size={26}/></div><div><strong>GHI NHẬN CHUYỂN ĐỘNG LẶP LẠI</strong><p>{overlay.channel} · khoảng {overlay.frequency} chu kỳ/phút</p><small>Thông báo kỹ thuật, không kết luận về tic</small></div><button type="button" onClick={()=>setOverlay(null)} aria-label="Đóng cảnh báo"><X size={18}/></button></div>}
+          </div>
+          {error&&<div className="mi-v2-error"><AlertTriangle size={17}/>{error}</div>}
+          <div className="mi-v2-controls">
+            <button type="button" className="btn btn-primary" onClick={()=>start()} disabled={busy}>{busy?'Đang tải mô hình...':running?'Khởi động lại camera':'Bật camera USB'} <Camera size={17}/></button>
+            {running&&<button type="button" className="btn btn-outline" onClick={stop}><CameraOff size={17}/> Dừng</button>}
+            <label className="mi-v2-upload"><UploadCloud size={17}/> Tải video thử<input type="file" accept="video/*" onChange={e=>{const f=e.target.files?.[0];if(f)start(f);e.target.value=''}}/></label>
+          </div>
+        </div>
+        <div className="mi-v2-panel">
+          <div className="mi-v2-heading"><div><h3><Activity size={18}/> Biểu đồ tín hiệu</h3><p>Đường tín hiệu tương đối trong vài giây gần nhất; không phải biểu đồ chẩn đoán.</p></div><div className="mi-v2-exports"><button type="button" onClick={downloadChart} disabled={!chartData.length}><Download size={15}/> SVG</button><button type="button" onClick={downloadCsv} disabled={!series.current.length}><Download size={15}/> CSV</button></div></div>
+          <div className="mi-v2-tabs">{MOTION_CHANNELS.map(ch=><button type="button" key={ch.id} className={chartChannel===ch.id?'active':''} onClick={()=>setChartChannel(ch.id)}>{ch.label}</button>)}</div>
+          <div className="mi-v2-graph"><svg viewBox="0 0 700 155" preserveAspectRatio="none" aria-label="Biểu đồ tín hiệu chuyển động"><g stroke="#dceee9" strokeWidth="1">{[25,60,95,130].map(y=><line key={y} x1="0" x2="700" y1={y} y2={y}/>)}</g>{chartData.length>2&&<polyline points={points} fill="none" stroke={MOTION_CHANNELS.find(x=>x.id===chartChannel)?.color||'#0d9488'} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round"/>}</svg>{chartData.length<3&&<span>Chưa có dữ liệu cho kênh này</span>}</div>
+          <div className="mi-v2-channels">{MOTION_CHANNELS.map(ch=><div key={ch.id}><span style={{background:ch.color}}/><label>{ch.label}</label><strong>{measurements[ch.id]===null||measurements[ch.id]===undefined?'—':`${measurements[ch.id]} /phút`}</strong></div>)}</div>
+        </div>
+      </section>
+      <aside className="mi-v2-sidebar">
+        <div className="mi-v2-panel mi-v2-settings">
+          <h3><Settings size={18}/> Cấu hình quan sát</h3>
+          <p>Điều chỉnh ngưỡng thử nghiệm, không phải ngưỡng y khoa.</p>
+          <div className="mi-v2-setting"><div><label>Độ nhạy phân tích</label><strong>{sensitivity}%</strong></div><input type="range" min="10" max="100" step="5" value={sensitivity} onChange={e=>setSensitivity(+e.target.value)}/></div>
+          <div className="mi-v2-setting"><div><label>Báo khi vượt tần suất</label><strong>{threshold} chu kỳ/phút</strong></div><input type="range" min="10" max="100" step="5" value={threshold} onChange={e=>setThreshold(+e.target.value)}/></div>
+          <div className="mi-v2-setting"><div><label>Duy trì tín hiệu</label><strong>{holdSeconds} giây</strong></div><input type="range" min="1" max="10" step="1" value={holdSeconds} onChange={e=>setHoldSeconds(+e.target.value)}/></div>
+          <div className="mi-v2-setting"><div><label>Giãn cách giữa hai lần báo</label><strong>{cooldownSeconds} giây</strong></div><input type="range" min="10" max="120" step="5" value={cooldownSeconds} onChange={e=>setCooldownSeconds(+e.target.value)}/></div>
+          <label className="mi-v2-toggle"><input type="checkbox" checked={sound} onChange={e=>setSound(e.target.checked)}/><span><b>Âm báo</b><small>Phát tiếng ngắn khi có cảnh báo</small></span></label>
+          <label className="mi-v2-toggle"><input type="checkbox" checked={desktopNotice} onChange={e=>e.target.checked?enableDesktop():setDesktopNotice(false)}/><span><b>Thông báo trình duyệt</b><small>Khi tab đang ở nền, nếu được cấp quyền</small></span></label>
+          <label className="mi-v2-toggle"><input type="checkbox" checked={showAllPoints} onChange={e=>setShowAllPoints(e.target.checked)}/><span><b>Hiển thị điểm mốc</b><small>Điểm khớp cơ thể và đường viền mắt</small></span></label>
+        </div>
+        <div className="mi-v2-panel mi-v2-safety"><h3><ShieldCheck size={18}/> Bảo vệ người dùng</h3><p>Camera và video được phân tích trên thiết bị. TICare không tự lưu video. Chỉ sử dụng video được cho phép và không gắn tín hiệu với danh tính học sinh.</p><p>{faceAvailable?'Đã tải mô hình phân tích khuôn mặt.':'Nếu mô hình khuôn mặt không tải được, hệ thống vẫn xử lý các kênh tư thế.'}</p></div>
+      </aside>
+    </div>
+  </div>;
+}
+
 function Education({user,role='member',notify,openAuth}){
   const [tab,setTab]=useState('lessons');
   const [age,setAge]=useState('all');
