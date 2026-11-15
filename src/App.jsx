@@ -1279,6 +1279,58 @@ function Motion({onRunningChange,onMotionEvent,stopToken}) {
   </div>;
 }
 
+const ED_AGES=[{id:'mam_non',label:'Mầm non'},{id:'lop_1',label:'Lớp 1'},{id:'lop_2',label:'Lớp 2'},{id:'lop_3',label:'Lớp 3'}];
+const ED_GAMES=[
+  {id:'kindness',title:'Lời nói tử tế',age:'mam_non',minutes:5,icon:'💚',desc:'Chọn cách cư xử thân thiện với bạn bè.',questions:[
+    {q:'Khi bạn làm rơi bút, em sẽ...',answers:['Giúp bạn nhặt bút','Cười chê bạn','Giấu bút của bạn'],correct:0,explain:'Giúp đỡ người khác là hành động tử tế.'},
+    {q:'Khi một bạn có cử động khác với mình, em nên...',answers:['Bắt chước bạn','Tôn trọng và không trêu chọc','Chỉ trỏ, cười đùa'],correct:1,explain:'Ai cũng xứng đáng được tôn trọng, dù có những khác biệt.'},
+    {q:'Khi bạn muốn chơi cùng nhóm, em có thể...',answers:['Mời bạn tham gia','Đuổi bạn đi','Làm ngơ để bạn buồn'],correct:0,explain:'Lời mời thân thiện giúp mọi người cảm thấy được chào đón.'}
+  ]},
+  {id:'classmate',title:'Bạn sẽ làm gì?',age:'lop_2',minutes:8,icon:'🌻',desc:'Trò chơi tình huống về sự tôn trọng trong lớp.',questions:[
+    {q:'Em thấy một bạn bị trêu chọc vì cử động lặp lại. Em nên làm gì?',answers:['Hùa theo cho vui','Can ngăn và báo người lớn đáng tin cậy','Quay video đăng lên mạng'],correct:1,explain:'Không trêu chọc hoặc ghi hình chia sẻ; hãy hỗ trợ bạn một cách tôn trọng.'},
+    {q:'Bạn xin thêm ít thời gian để hoàn thành bài. Em nên...',answers:['Nói bạn lười biếng','Làm bài hộ bạn','Tôn trọng sự hỗ trợ mà giáo viên sắp xếp'],correct:2,explain:'Mỗi bạn có thể cần cách học phù hợp với mình.'},
+    {q:'Khi chưa hiểu vì sao bạn có cử động khác thường, em nên...',answers:['Tự kết luận bạn mắc bệnh','Không suy đoán và cư xử bình thường','Hỏi cả lớp xem ai biết'],correct:1,explain:'Không nên tự suy đoán hoặc công khai chuyện riêng của người khác.'}
+  ]},
+  {id:'helping',title:'Bàn tay giúp bạn',age:'lop_1',minutes:5,icon:'🤝',desc:'Học cách giúp bạn qua những tình huống gần gũi.',questions:[
+    {q:'Bạn chưa tìm thấy hộp bút. Em nên...',answers:['Giúp bạn tìm','Cười bạn','Giấu hộp bút'],correct:0,explain:'Giúp bạn tìm đồ là hành động tử tế.'},
+    {q:'Bạn có cách nói hoặc cử động khác mình. Em sẽ...',answers:['Trêu bạn','Tôn trọng và lắng nghe','Bắt chước bạn'],correct:1,explain:'Mỗi người có đặc điểm riêng và xứng đáng được tôn trọng.'}
+  ]},
+  {id:'respect-choices',title:'Lựa chọn tôn trọng',age:'lop_3',minutes:8,icon:'🌟',desc:'Tập ứng xử khi gặp tình huống về sự khác biệt.',questions:[
+    {q:'Một bạn bị trêu chọc vì biểu hiện khác với mọi người. Em sẽ...',answers:['Cùng cười','Nhờ giáo viên giúp và không trêu chọc','Đăng chuyện lên mạng'],correct:1,explain:'Can thiệp an toàn, không công khai thông tin của bạn.'},
+    {q:'Khi bạn cần cách học khác để tham gia bài học, em nên...',answers:['Tôn trọng sự sắp xếp của giáo viên','Cho rằng bạn được thiên vị','Không chơi với bạn'],correct:0,explain:'Sự hỗ trợ phù hợp giúp mọi người có cơ hội học tập công bằng.'}
+  ]}
+];
+const ED_SLIDES=[
+  {id:'kindness-slides',title:'Lớp học của những lời tử tế',age:'mam_non',desc:'Bộ slide đơn giản cho hoạt động 10 phút.',pages:[
+    {title:'Lời nói tử tế',body:'Hôm nay chúng mình học cách quan tâm và tôn trọng bạn bè.',emoji:'💚'},
+    {title:'Mỗi bạn là một bông hoa',body:'Chúng mình có thể khác nhau, nhưng ai cũng đáng quý.',emoji:'🌼'},
+    {title:'Khi bạn gặp khó khăn',body:'Hãy hỏi: “Mình có thể giúp bạn không?”',emoji:'🤝'},
+    {title:'Cùng chọn lời nói đẹp',body:'“Mình chơi cùng nhé!” · “Cảm ơn bạn!” · “Bạn làm tốt lắm!”',emoji:'🌈'},
+    {title:'Lời hứa của lớp mình',body:'Không trêu chọc. Biết lắng nghe. Sẵn sàng giúp đỡ.',emoji:'⭐'}
+  ]},
+  {id:'respect-slides',title:'Tôn trọng sự khác biệt',age:'lop_2',desc:'Bộ slide tình huống cho lớp 1–3.',pages:[
+    {title:'Ai cũng có điểm khác biệt',body:'Sự khác biệt không phải lý do để chê cười người khác.',emoji:'🌍'},
+    {title:'Một số cử động không chủ ý',body:'Có những cử động một người không dễ tự kiểm soát. Chúng ta không tự đoán nguyên nhân.',emoji:'🫶'},
+    {title:'Tình huống lớp học',body:'Nếu thấy một bạn bị bắt chước, trêu chọc, em sẽ làm gì?',emoji:'💬'},
+    {title:'Cách giúp bạn',body:'Dừng việc trêu chọc, cư xử tôn trọng và tìm sự hỗ trợ từ giáo viên.',emoji:'🤝'},
+    {title:'Thông điệp',body:'Hiểu sự khác biệt – tôn trọng mỗi người – cùng nhau học tốt.',emoji:'✨'}
+  ]},
+  {id:'help-slides',title:'Chúng mình cùng giúp nhau',age:'lop_1',desc:'5 trang ngắn, hình ảnh và câu dễ nhớ.',pages:[
+    {title:'Cùng nhau đến lớp',body:'Mỗi bạn là một phần quan trọng của lớp mình.',emoji:'🏫'},
+    {title:'Một việc tốt nhỏ',body:'Hỏi bạn: “Mình giúp được gì không?”',emoji:'💛'},
+    {title:'Biết lắng nghe',body:'Không cười chê khi bạn có điều khác biệt.',emoji:'👂'},
+    {title:'Cùng hợp tác',body:'Rủ bạn cùng chơi và học bài.',emoji:'🤝'},
+    {title:'Thông điệp',body:'Tử tế với mọi người, mỗi ngày.',emoji:'⭐'}
+  ]},
+  {id:'class3-slides',title:'Lớp học không trêu chọc',age:'lop_3',desc:'5 trang cho hoạt động thảo luận lớp 3.',pages:[
+    {title:'Một lớp học thân thiện',body:'Ai cũng có quyền được học tập an toàn và tôn trọng.',emoji:'🌻'},
+    {title:'Sự khác biệt là bình thường',body:'Chúng ta không kết luận nguyên nhân cử động của người khác.',emoji:'🌈'},
+    {title:'Khi chứng kiến trêu chọc',body:'Không hùa theo, không quay video chia sẻ.',emoji:'🛑'},
+    {title:'Cách hỗ trợ',body:'An ủi bạn và tìm thầy cô đáng tin cậy.',emoji:'🤝'},
+    {title:'Lời hứa của cả lớp',body:'Tôn trọng – Lắng nghe – Giúp đỡ.',emoji:'💚'}
+  ]}
+];
+
 function Education({user,role='member',notify,openAuth}){
   const [tab,setTab]=useState('lessons');
   const [age,setAge]=useState('all');
