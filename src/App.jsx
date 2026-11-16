@@ -1114,54 +1114,158 @@ function Motion({onRunningChange,onMotionEvent,stopToken}) {
     }
     return signal;
   }
+  function explainCameraError(error){
+    const name=error?.name||'';
+    if(name==='NotAllowedError'||name==='PermissionDeniedError'){
+      return 'Trình duyệt hoặc Windows đang chặn quyền camera. Hãy cho phép Camera trong cài đặt trang web của Chrome rồi thử lại.';
+    }
+    if(name==='NotFoundError'||name==='DevicesNotFoundError'){
+      return 'Không tìm thấy webcam. Hãy kết nối webcam USB và kiểm tra thiết bị trong Windows.';
+    }
+    if(name==='NotReadableError'||name==='TrackStartError'){
+      return 'Không thể mở webcam vì thiết bị có thể đang được ứng dụng khác sử dụng. Hãy đóng Camera, Zoom, Meet hoặc ứng dụng đang dùng webcam rồi thử lại.';
+    }
+    if(name==='OverconstrainedError'||name==='ConstraintNotSatisfiedError'){
+      return 'Webcam không đáp ứng cấu hình video yêu cầu. Hãy thử kết nối webcam khác.';
+    }
+    if(name==='SecurityError'){
+      return 'Trình duyệt chặn camera vì lý do bảo mật. Hãy mở TICare bằng HTTPS hoặc localhost.';
+    }
+    return error?.message||'Không thể truy cập webcam. Hãy kiểm tra kết nối và quyền camera.';
+  }
+
+  async function waitForVideoReady(element){
+    if(!element)throw Error('Không tìm thấy khung video của Motion Insight.');
+    if(element.readyState>=1 && element.videoWidth>0)return;
+    await new Promise((resolve,reject)=>{
+      let timer;
+      const cleanup=()=>{
+        clearTimeout(timer);
+        element.removeEventListener('loadedmetadata',ready);
+        element.removeEventListener('error',failed);
+      };
+      const ready=()=>{cleanup();resolve()};
+      const failed=()=>{cleanup();reject(Error('Không thể đọc nguồn video. Hãy thử lại bằng webcam hoặc một tệp video khác.'))};
+      element.addEventListener('loadedmetadata',ready,{once:true});
+      element.addEventListener('error',failed,{once:true});
+      timer=setTimeout(()=>{cleanup();reject(Error('Webcam chưa gửi được hình ảnh. Hãy kiểm tra webcam và thử lại.'))},12000);
+    });
+  }
+
   async function start(upload){
     if(busy)return;
-    stop();setBusy(true);setError('');setOverlay(null);setSnapshot([]);
-    samples.current={};series.current=[];previousPose.current=null;activeLevel.current={};lastNotify.current={};lastAt.current=0;
+    stop();
+    setBusy(true);
+    setError('');
+    setOverlay(null);
+    setSnapshot([]);
+    setMeasurements({});
+    setElapsed(0);
+    setFaceAvailable(false);
+    samples.current={};
+    series.current=[];
+    previousPose.current=null;
+    activeLevel.current={};
+    lastNotify.current={};
+    lastAt.current=0;
+
     try{
-      const {PoseLandmarker,FaceLandmarker,FilesetResolver,DrawingUtils}=await import('@mediapipe/tasks-vision');
-      const vision=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');
-      poseModel.current=await PoseLandmarker.createFromOptions(vision,{
-        baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'CPU'},
-        runningMode:'VIDEO',numPoses:1,minPoseDetectionConfidence:.5,minTrackingConfidence:.5
-      });
+      // QUAN TRỌNG: xin quyền webcam ngay khi người dùng bấm nút,
+      // trước khi tải thư viện hoặc mô hình AI từ Internet.
+      if(upload){
+        if(!upload.type.startsWith('video/'))throw Error('Vui lòng chọn tệp video hợp lệ.');
+        if(upload.size>100*1024*1024)throw Error('Video thử nghiệm tối đa 100 MB.');
+        fileUrl.current=URL.createObjectURL(upload);
+        video.current.src=fileUrl.current;
+        video.current.load();
+        setSource('video');
+      }else{
+        const localHost=['localhost','127.0.0.1','::1'].includes(window.location.hostname);
+        if(!window.isSecureContext&&!localHost){
+          throw Error('Camera chỉ hoạt động trên HTTPS hoặc localhost. Hãy mở website bằng đường dẫn HTTPS.');
+        }
+        if(!navigator.mediaDevices||typeof navigator.mediaDevices.getUserMedia!=='function'){
+          throw Error('Trình duyệt không hỗ trợ camera. Hãy dùng Chrome hoặc Edge phiên bản mới và mở TICare bằng HTTPS.');
+        }
+        try{
+          mediaStream.current=await navigator.mediaDevices.getUserMedia({
+            video:{width:{ideal:640},height:{ideal:480},facingMode:'user'},
+            audio:false
+          });
+        }catch(cameraError){
+          throw Error(explainCameraError(cameraError));
+        }
+        if(!video.current)throw Error('Khung camera chưa sẵn sàng. Hãy tải lại trang rồi thử lại.');
+        video.current.srcObject=mediaStream.current;
+        video.current.muted=true;
+        video.current.playsInline=true;
+        setSource('camera');
+      }
+
+      // Chỉ tải MediaPipe sau khi camera đã được cấp quyền thành công.
+      let visionLibrary;
+      try{
+        visionLibrary=await import('@mediapipe/tasks-vision');
+      }catch(importError){
+        throw Error('Không tải được thư viện MediaPipe. Hãy kiểm tra kết nối Internet rồi tải lại trang.');
+      }
+      const {PoseLandmarker,FaceLandmarker,FilesetResolver,DrawingUtils}=visionLibrary;
+
+      let vision;
+      try{
+        vision=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');
+      }catch(wasmError){
+        throw Error('Không tải được bộ xử lý MediaPipe (WASM). Hãy kiểm tra Internet hoặc thử lại sau.');
+      }
+
+      try{
+        poseModel.current=await PoseLandmarker.createFromOptions(vision,{
+          baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'CPU'},
+          runningMode:'VIDEO',numPoses:1,minPoseDetectionConfidence:.5,minTrackingConfidence:.5
+        });
+      }catch(modelError){
+        throw Error('Không tải được mô hình nhận diện tư thế. Hãy kiểm tra kết nối Internet rồi thử lại.');
+      }
+
       try{
         faceModel.current=await FaceLandmarker.createFromOptions(vision,{
           baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',delegate:'CPU'},
           runningMode:'VIDEO',numFaces:1,outputFaceBlendshapes:true
         });
         setFaceAvailable(true);
-      }catch(e){console.warn('Không tải được mô hình khuôn mặt, tiếp tục phân tích tư thế',e);setFaceAvailable(false)}
-      if(upload){
-        if(!upload.type.startsWith('video/'))throw Error('Vui lòng chọn tệp video hợp lệ.');
-        if(upload.size>100*1024*1024)throw Error('Video thử nghiệm tối đa 100 MB.');
-        fileUrl.current=URL.createObjectURL(upload);
-        video.current.src=fileUrl.current;
-        setSource('video');
-      }else{
-        if(!navigator.mediaDevices?.getUserMedia)throw Error('Camera yêu cầu HTTPS và trình duyệt hỗ trợ.');
-        mediaStream.current=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:640},height:{ideal:480},facingMode:'user'},audio:false});
-        video.current.srcObject=mediaStream.current;
-        setSource('camera');
+      }catch(faceError){
+        console.warn('Không tải được mô hình khuôn mặt, tiếp tục phân tích tư thế',faceError);
+        setFaceAvailable(false);
       }
+
+      await waitForVideoReady(video.current);
       await video.current.play();
-      const draw=new DrawingUtils(canvas.current.getContext('2d'));
-      active.current=true;setRunning(true);callbacks.current.onRunningChange?.(true);
+      const context=canvas.current?.getContext('2d');
+      if(!context)throw Error('Không thể khởi tạo khung phân tích hình ảnh. Hãy tải lại trang.');
+      const draw=new DrawingUtils(context);
+
+      active.current=true;
+      setRunning(true);
+      callbacks.current.onRunningChange?.(true);
       startedAt.current=performance.now();
       let lastTimestamp=-1;
+
       const loop=()=>{
-        if(!active.current || !video.current)return;
+        if(!active.current||!video.current||!canvas.current)return;
         const v=video.current,c=canvas.current;
         if(v.ended){setStatus('Video đã phát hết');stop();return}
-        if(v.readyState>=2 && v.videoWidth>0 && v.currentTime!==lastTimestamp){
+        if(v.readyState>=2&&v.videoWidth>0&&v.currentTime!==lastTimestamp){
           lastTimestamp=v.currentTime;
           const now=performance.now();
           if(now-lastAt.current>=100){
             lastAt.current=now;
-            c.width=v.videoWidth;c.height=v.videoHeight;
-            const ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);
+            c.width=v.videoWidth;
+            c.height=v.videoHeight;
+            const ctx=c.getContext('2d');
+            ctx.clearRect(0,0,c.width,c.height);
             const pose=poseModel.current.detectForVideo(v,now);
-            const pts=pose.landmarks?.[0];setPersons(pose.landmarks?.length||0);
+            const pts=pose.landmarks?.[0];
+            setPersons(pose.landmarks?.length||0);
             if(pts){
               draw.drawConnectors(pts,PoseLandmarker.POSE_CONNECTIONS,{color:'#75e4cf',lineWidth:2});
               if(showAllPointsRef.current)draw.drawLandmarks(pts,{color:'#faffff',fillColor:'#0e9e86',radius:2});
@@ -1170,7 +1274,7 @@ function Motion({onRunningChange,onMotionEvent,stopToken}) {
             if(faceModel.current){
               try{
                 face=faceModel.current.detectForVideo(v,now);
-                if(face?.faceLandmarks?.[0] && showAllPointsRef.current){
+                if(face?.faceLandmarks?.[0]&&showAllPointsRef.current){
                   draw.drawConnectors(face.faceLandmarks[0],FaceLandmarker.FACE_LANDMARKS_FACE_OVAL,{color:'#7dd3fc',lineWidth:1});
                   draw.drawConnectors(face.faceLandmarks[0],FaceLandmarker.FACE_LANDMARKS_LEFT_EYEBROW,{color:'#7dd3fc',lineWidth:1});
                   draw.drawConnectors(face.faceLandmarks[0],FaceLandmarker.FACE_LANDMARKS_RIGHT_EYEBROW,{color:'#7dd3fc',lineWidth:1});
@@ -1178,15 +1282,20 @@ function Motion({onRunningChange,onMotionEvent,stopToken}) {
                   draw.drawConnectors(face.faceLandmarks[0],FaceLandmarker.FACE_LANDMARKS_LEFT_EYE,{color:'#7dd3fc',lineWidth:1});
                   draw.drawConnectors(face.faceLandmarks[0],FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE,{color:'#7dd3fc',lineWidth:1});
                 }
-              }catch(e){console.debug('Tạm bỏ qua khung hình khuôn mặt',e)}
+              }catch(faceFrameError){console.debug('Tạm bỏ qua khung hình khuôn mặt',faceFrameError)}
             }
             const vals=getSignals(pts,face),t=(now-startedAt.current)/1000;
             const current={};
             for(const ch of MOTION_CHANNELS){
               const value=vals[ch.id];
-              if(!Number.isFinite(value)){delete samples.current[ch.id];inspectSignal(ch.id,null,now);continue}
+              if(!Number.isFinite(value)){
+                delete samples.current[ch.id];
+                inspectSignal(ch.id,null,now);
+                continue;
+              }
               const arr=samples.current[ch.id]||[];
-              arr.push({t,value});while(arr.length && t-arr[0].t>7)arr.shift();
+              arr.push({t,value});
+              while(arr.length&&t-arr[0].t>7)arr.shift();
               samples.current[ch.id]=arr;
               const f=motionFrequency(arr,callbacks.current.sensitivity);
               current[ch.id]=f;
@@ -1203,8 +1312,13 @@ function Motion({onRunningChange,onMotionEvent,stopToken}) {
         frame.current=requestAnimationFrame(loop);
       };
       frame.current=requestAnimationFrame(loop);
-    }catch(e){stop();setError(e.message||'Không thể khởi động Motion Insight')}
-    finally{setBusy(false)}
+    }catch(error){
+      console.error('TICare Motion Insight start error:',error);
+      stop();
+      setError(error?.message||'Không thể khởi động Motion Insight. Hãy kiểm tra camera và kết nối Internet.');
+    }finally{
+      setBusy(false);
+    }
   }
   const showAllPointsRef=useRef(showAllPoints);showAllPointsRef.current=showAllPoints;
   async function enableDesktop(){
