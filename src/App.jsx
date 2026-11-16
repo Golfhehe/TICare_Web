@@ -1016,87 +1016,6 @@ function motionFrequency(samples, sensitivity=60) {
   return +Math.min(155,60/mean).toFixed(1);
 }
 
-const MP_WASM_ROOTS = [
-  `${import.meta.env.BASE_URL}mediapipe/wasm`,
-  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm',
-  'https://unpkg.com/@mediapipe/tasks-vision@0.10.22/wasm',
-  'https://fastly.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm'
-];
-const POSE_MODEL_SOURCES = [
-  `${import.meta.env.BASE_URL}models/pose_landmarker_lite.task`,
-  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
-  'https://huggingface.co/spaces/ChanchalSh/Sign_language_detection_System/resolve/main/pose_landmarker_lite.task',
-  'https://raw.githubusercontent.com/parvpatodia/Laksh_AI/main/pose_landmarker_lite.task'
-];
-const FACE_MODEL_SOURCES = [
-  `${import.meta.env.BASE_URL}models/face_landmarker.task`,
-  'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task',
-  'https://github.com/sanderdesnaijer/mediapipe-model-mirrors/releases/download/v1/face_landmarker.task'
-];
-
-async function createPoseModel(PoseLandmarker, FilesetResolver) {
-  const poseBuffer = await loadModelBuffer(POSE_MODEL_SOURCES, 'mô hình nhận diện tư thế');
-  const errors = [];
-  for (const root of MP_WASM_ROOTS) {
-    try {
-      const vision = await FilesetResolver.forVisionTasks(root);
-      const model = await PoseLandmarker.createFromOptions(vision, {
-        baseOptions: { modelAssetBuffer: poseBuffer, delegate: 'CPU' },
-        runningMode: 'VIDEO', numPoses: 1,
-        minPoseDetectionConfidence: .5, minTrackingConfidence: .5
-      });
-      return { vision, model };
-    } catch (error) {
-      console.warn('Không khởi tạo được MediaPipe với nguồn WASM:', root, error);
-      let host = root;
-      try { host = new URL(root, window.location.href).host; } catch {}
-      errors.push(`${host}: ${error?.message || 'không khởi tạo được'}`);
-    }
-  }
-  throw new Error(`Đã tải được mô hình nhưng không khởi tạo được bộ nhận diện MediaPipe. Hãy thử tải lại trang hoặc kiểm tra kết nối. Chi tiết: ${errors.join(' | ')}`);
-}
-
-async function loadModelBuffer(sources, label) {
-  const errors = [];
-  for (const url of sources) {
-    try {
-      const response = await fetch(url, { mode: 'cors', cache: 'force-cache', signal: AbortSignal.timeout(12000) });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const buffer = await response.arrayBuffer();
-      if (buffer.byteLength < 500000) throw new Error('Tệp tải về quá nhỏ hoặc không phải mô hình hợp lệ');
-      return new Uint8Array(buffer);
-    } catch (error) {
-      console.warn(`Không tải được ${label} từ ${url}:`, error);
-      let host = url;
-      try { host = new URL(url, window.location.href).host; } catch {}
-      errors.push(`${host}: ${error?.message || 'lỗi tải tệp'}`);
-    }
-  }
-  throw new Error(`Không tải được ${label} từ các nguồn dự phòng. Hãy kiểm tra kết nối Internet. Chi tiết: ${errors.join(' | ')}`);
-}
-
-function waitForVideoReady(video, timeoutMs = 15000) {
-  return new Promise((resolve, reject) => {
-    if (video.readyState >= 2 && video.videoWidth > 0) return resolve();
-    let timer;
-    const cleanup = () => {
-      clearTimeout(timer);
-      video.removeEventListener('loadeddata', ready);
-      video.removeEventListener('error', failed);
-    };
-    const ready = () => {
-      if (video.videoWidth > 0) { cleanup(); resolve(); }
-    };
-    const failed = () => { cleanup(); reject(new Error('Không đọc được hình ảnh từ camera hoặc video.')); };
-    video.addEventListener('loadeddata', ready);
-    video.addEventListener('error', failed);
-    timer = setTimeout(() => {
-      cleanup();
-      reject(new Error('Camera đã kết nối nhưng không nhận được hình ảnh. Hãy kiểm tra webcam rồi thử lại.'));
-    }, timeoutMs);
-  });
-}
-
 function Motion({onRunningChange,onMotionEvent,stopToken}) {
   const video=useRef(null),canvas=useRef(null),poseModel=useRef(null),faceModel=useRef(null);
   const mediaStream=useRef(null),frame=useRef(null),active=useRef(false),fileUrl=useRef(null);
@@ -1200,7 +1119,19 @@ function Motion({onRunningChange,onMotionEvent,stopToken}) {
     stop();setBusy(true);setError('');setOverlay(null);setSnapshot([]);
     samples.current={};series.current=[];previousPose.current=null;activeLevel.current={};lastNotify.current={};lastAt.current=0;
     try{
-      // Mở nguồn video trước để trình duyệt xin quyền camera ngay trong thao tác của người dùng.
+      const {PoseLandmarker,FaceLandmarker,FilesetResolver,DrawingUtils}=await import('@mediapipe/tasks-vision');
+      const vision=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');
+      poseModel.current=await PoseLandmarker.createFromOptions(vision,{
+        baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'CPU'},
+        runningMode:'VIDEO',numPoses:1,minPoseDetectionConfidence:.5,minTrackingConfidence:.5
+      });
+      try{
+        faceModel.current=await FaceLandmarker.createFromOptions(vision,{
+          baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',delegate:'CPU'},
+          runningMode:'VIDEO',numFaces:1,outputFaceBlendshapes:true
+        });
+        setFaceAvailable(true);
+      }catch(e){console.warn('Không tải được mô hình khuôn mặt, tiếp tục phân tích tư thế',e);setFaceAvailable(false)}
       if(upload){
         if(!upload.type.startsWith('video/'))throw Error('Vui lòng chọn tệp video hợp lệ.');
         if(upload.size>100*1024*1024)throw Error('Video thử nghiệm tối đa 100 MB.');
@@ -1208,33 +1139,12 @@ function Motion({onRunningChange,onMotionEvent,stopToken}) {
         video.current.src=fileUrl.current;
         setSource('video');
       }else{
-        if(!window.isSecureContext)throw Error('Camera chỉ hoạt động trên HTTPS hoặc localhost.');
-        if(!navigator.mediaDevices?.getUserMedia)throw Error('Trình duyệt không hỗ trợ camera. Hãy dùng Chrome hoặc Edge trên HTTPS.');
-        setStatus('Đang yêu cầu quyền truy cập camera...');
-        mediaStream.current=await navigator.mediaDevices.getUserMedia({
-          video:{width:{ideal:640},height:{ideal:480},facingMode:'user'},audio:false
-        });
+        if(!navigator.mediaDevices?.getUserMedia)throw Error('Camera yêu cầu HTTPS và trình duyệt hỗ trợ.');
+        mediaStream.current=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:640},height:{ideal:480},facingMode:'user'},audio:false});
         video.current.srcObject=mediaStream.current;
         setSource('camera');
       }
-
-      await waitForVideoReady(video.current);
       await video.current.play();
-
-      // Tải thư viện và mô hình sau khi nguồn camera/video đã sẵn sàng.
-      setStatus('Đang tải bộ nhận diện chuyển động...');
-      const {PoseLandmarker,FaceLandmarker,FilesetResolver,DrawingUtils}=await import('@mediapipe/tasks-vision');
-      const {vision,model:pose}=await createPoseModel(PoseLandmarker,FilesetResolver);
-      poseModel.current=pose;
-      try{
-        const faceBuffer=await loadModelBuffer(FACE_MODEL_SOURCES,'mô hình nhận diện khuôn mặt');
-        faceModel.current=await FaceLandmarker.createFromOptions(vision,{
-          baseOptions:{modelAssetBuffer:faceBuffer,delegate:'CPU'},
-          runningMode:'VIDEO',numFaces:1,outputFaceBlendshapes:true
-        });
-        setFaceAvailable(true);
-      }catch(e){console.warn('Không tải được mô hình khuôn mặt, tiếp tục phân tích tư thế',e);setFaceAvailable(false)}
-
       const draw=new DrawingUtils(canvas.current.getContext('2d'));
       active.current=true;setRunning(true);callbacks.current.onRunningChange?.(true);
       startedAt.current=performance.now();
@@ -1293,11 +1203,7 @@ function Motion({onRunningChange,onMotionEvent,stopToken}) {
         frame.current=requestAnimationFrame(loop);
       };
       frame.current=requestAnimationFrame(loop);
-    }catch(e){
-      console.error('TICare Motion Insight:',e);
-      stop();
-      setError(e.message||'Không thể khởi động Motion Insight.');
-    }
+    }catch(e){stop();setError(e.message||'Không thể khởi động Motion Insight')}
     finally{setBusy(false)}
   }
   const showAllPointsRef=useRef(showAllPoints);showAllPointsRef.current=showAllPoints;
