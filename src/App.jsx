@@ -1122,11 +1122,115 @@ function Motion({onRunningChange,onMotionEvent,stopToken}) {
     samples.current={};series.current=[];previousPose.current=null;activeLevel.current={};lastNotify.current={};lastAt.current=0;
     try{
       const {PoseLandmarker,FaceLandmarker,FilesetResolver,DrawingUtils}=await import('@mediapipe/tasks-vision');
-      const vision=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');
+      let vision;
+      try{
+        vision=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm');
+      }catch{
+        vision=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');
+      }
       poseModel.current=await PoseLandmarker.createFromOptions(vision,{
         baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',delegate:'CPU'},
         runningMode:'VIDEO',numPoses:1,minPoseDetectionConfidence:.5,minTrackingConfidence:.5
       });
+      try{
+        faceModel.current=await FaceLandmarker.createFromOptions(vision,{
+          baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',delegate:'CPU'},
+          runningMode:'VIDEO',numFaces:1,outputFaceBlendshapes:true
+        });
+        setFaceAvailable(true);
+      }catch(e){console.warn('Không tải được mô hình khuôn mặt, tiếp tục phân tích tư thế',e);setFaceAvailable(false)}
+      if(upload){
+        if(!upload.type.startsWith('video/'))throw Error('Vui lòng chọn tệp video hợp lệ.');
+        if(upload.size>100*1024*1024)throw Error('Video thử nghiệm tối đa 100 MB.');
+        fileUrl.current=URL.createObjectURL(upload);
+        video.current.src=fileUrl.current;
+        setSource('video');
+      }else{
+        if(!navigator.mediaDevices?.getUserMedia)throw Error('Camera yêu cầu HTTPS và trình duyệt hỗ trợ.');
+        try{
+          mediaStream.current=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:640},height:{ideal:480},facingMode:'user'},audio:false});
+        }catch(camErr){
+          if(camErr?.name==='OverconstrainedError'||camErr?.name==='ConstraintNotSatisfiedError'){
+            mediaStream.current=await navigator.mediaDevices.getUserMedia({video:true,audio:false});
+          }else{
+            throw camErr;
+          }
+        }
+        video.current.srcObject=mediaStream.current;
+        setSource('camera');
+      }
+      await video.current.play();
+      const draw=new DrawingUtils(canvas.current.getContext('2d'));
+      active.current=true;setRunning(true);callbacks.current.onRunningChange?.(true);
+      startedAt.current=performance.now();
+      let lastTimestamp=-1;
+      const loop=()=>{
+        if(!active.current || !video.current)return;
+        const v=video.current,c=canvas.current;
+        if(v.ended){setStatus('Video đã phát hết');stop();return}
+        if(v.readyState>=2 && v.videoWidth>0 && v.currentTime!==lastTimestamp){
+          lastTimestamp=v.currentTime;
+          const now=performance.now();
+          if(now-lastAt.current>=100){
+            lastAt.current=now;
+            c.width=v.videoWidth;c.height=v.videoHeight;
+            const ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);
+            const pose=poseModel.current.detectForVideo(v,now);
+            const pts=pose.landmarks?.[0];setPersons(pose.landmarks?.length||0);
+            if(pts){
+              draw.drawConnectors(pts,PoseLandmarker.POSE_CONNECTIONS,{color:'#75e4cf',lineWidth:2});
+              if(showAllPointsRef.current)draw.drawLandmarks(pts,{color:'#faffff',fillColor:'#0e9e86',radius:2});
+            }
+            let face=null;
+            if(faceModel.current){
+              try{
+                face=faceModel.current.detectForVideo(v,now);
+                if(face?.faceLandmarks?.[0] && showAllPointsRef.current){
+                  draw.drawConnectors(face.faceLandmarks[0],FaceLandmarker.FACE_LANDMARKS_FACE_OVAL,{color:'#7dd3fc',lineWidth:1});
+                  draw.drawConnectors(face.faceLandmarks[0],FaceLandmarker.FACE_LANDMARKS_LEFT_EYEBROW,{color:'#7dd3fc',lineWidth:1});
+                  draw.drawConnectors(face.faceLandmarks[0],FaceLandmarker.FACE_LANDMARKS_RIGHT_EYEBROW,{color:'#7dd3fc',lineWidth:1});
+                  draw.drawConnectors(face.faceLandmarks[0],FaceLandmarker.FACE_LANDMARKS_LIPS,{color:'#7dd3fc',lineWidth:1});
+                  draw.drawConnectors(face.faceLandmarks[0],FaceLandmarker.FACE_LANDMARKS_LEFT_EYE,{color:'#7dd3fc',lineWidth:1});
+                  draw.drawConnectors(face.faceLandmarks[0],FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE,{color:'#7dd3fc',lineWidth:1});
+                }
+              }catch(e){console.debug('Tạm bỏ qua khung hình khuôn mặt',e)}
+            }
+            const vals=getSignals(pts,face),t=(now-startedAt.current)/1000;
+            const current={};
+            for(const ch of MOTION_CHANNELS){
+              const value=vals[ch.id];
+              if(!Number.isFinite(value)){delete samples.current[ch.id];inspectSignal(ch.id,null,now);continue}
+              const arr=samples.current[ch.id]||[];
+              arr.push({t,value});while(arr.length && t-arr[0].t>7)arr.shift();
+              samples.current[ch.id]=arr;
+              const f=motionFrequency(arr,callbacks.current.sensitivity);
+              current[ch.id]=f;
+              inspectSignal(ch.id,f,now);
+            }
+            series.current.push({t,...vals});
+            if(series.current.length>900)series.current.shift();
+            setMeasurements(current);
+            setSnapshot(series.current.slice(-70));
+            setElapsed(Math.round(t));
+            setStatus(Object.values(current).some(x=>x!==null)?'Đang ghi nhận chu kỳ chuyển động':'Đang phân tích / chưa có chu kỳ ổn định');
+          }
+        }
+        frame.current=requestAnimationFrame(loop);
+      };
+      frame.current=requestAnimationFrame(loop);
+    }catch(e){
+      console.error("TICare Motion Insight startup error:",e);
+      const map={
+        NotAllowedError:'Trình duyệt chưa được cấp quyền camera.',
+        NotFoundError:'Không tìm thấy webcam USB hoặc camera trên thiết bị.',
+        NotReadableError:'Camera đang được ứng dụng hoặc tab khác sử dụng (Device in use).'
+      };
+      const detail=map[e?.name]||e?.message||e?.name||String(e)||'Lỗi không xác định';
+      stop();
+      setError('Không thể khởi động: '+detail);
+    }
+    finally{setBusy(false)}
+  }
       try{
         faceModel.current=await FaceLandmarker.createFromOptions(vision,{
           baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',delegate:'CPU'},
