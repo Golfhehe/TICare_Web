@@ -25,13 +25,25 @@
 .edu-studio-status{background:#f2f9f6;border:1px solid #cce7dc;border-radius:12px;padding:11px 12px;color:#28635b;font-size:12px;line-height:1.6;margin-top:13px}
 .edu-studio-preview-head{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}.edu-studio-preview-head>span{font-size:11px;color:#128c79;font-weight:700}
 .edu-studio-empty{min-height:260px;background:#f5fbf9;border:1px dashed #bedbd2;border-radius:17px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:#5a7e7e;text-align:center;padding:16px}.edu-studio-empty p{margin:0;font-size:13px}
-.edu-studio-slide{aspect-ratio:16/9;background:radial-gradient(circle at 88% 10%,#e6faf3,#fff 60%);border:1px solid #e0ebe8;border-left:7px solid #0fa88e;border-radius:14px;padding:clamp(15px,3%,32px);display:flex;flex-direction:column;justify-content:center;overflow:auto;min-height:265px;box-shadow:inset 0 0 50px #0ba68c08;}
+.edu-studio-slide{width:100%;box-sizing:border-box;aspect-ratio:16/9;background:radial-gradient(circle at 88% 10%,#e6faf3,#fff 60%);border:1px solid #e0ebe8;border-left:7px solid #0fa88e;border-radius:14px;padding:clamp(15px,3%,32px);display:flex;flex-direction:column;justify-content:center;overflow:auto;min-height:265px;box-shadow:inset 0 0 50px #0ba68c08;}
 .edu-studio-slide>small{color:#098c76;font-weight:800;font-size:11px;letter-spacing:.3px}
 .edu-studio-emoji{font-size:33px;margin:10px 0}.edu-studio-slide h3{font-size:clamp(18px,2vw,27px);margin:0 0 10px;color:#143d45;line-height:1.22}.edu-studio-slide p{font-size:clamp(12px,1.2vw,17px);color:#3a5c62;white-space:pre-line;margin:0;line-height:1.6}.edu-studio-slide blockquote{border:0;border-left:3px solid #20ad98;background:#eaf9f4;color:#217f72;padding:8px 10px;border-radius:8px;font-size:12px;font-weight:600;margin:13px 0 0}
 .edu-studio-navigation{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:13px 0 18px}.edu-studio-navigation button{border:1px solid #d5e9e4;background:white;color:#226e67;border-radius:9px;padding:8px 11px;cursor:pointer;display:flex;align-items:center;gap:5px;font-weight:700}.edu-studio-navigation button:disabled{opacity:.35;cursor:not-allowed}.edu-studio-navigation b{font-size:12px;color:#53717a}
 .edu-studio-editor{background:#f7fbfa;border:1px solid #e1ece9;border-radius:15px;padding:16px;margin-bottom:15px}.edu-studio-editor label:last-child{margin-bottom:0!important}
 .edu-studio-disclaimer{display:flex;align-items:center;gap:8px;font-size:12px;color:#648385;margin:16px 0 0;line-height:1.6}
 @keyframes educationRise{from{opacity:.45;transform:translateY(9px)}to{opacity:1;transform:translateY(0)}}
-@media(max-width:980px){.edu-studio-layout{grid-template-columns:1fr}.edu-studio-slide{min-height:290px}}
+/* Pre-export check (T2.4) */
+.edu-studio-check{margin-top:14px;padding:14px;border:1px solid #d8eeea;border-radius:14px;background:#f7fcfb;display:grid;gap:10px;min-width:0}
+.edu-studio-check h4{display:flex;align-items:center;gap:7px;margin:0;font-size:14px;color:#0c5f5a}
+.edu-studio-check-ok{display:flex;align-items:flex-start;gap:7px;margin:0;font-size:13px;color:#126b4f}
+.edu-studio-issues{list-style:none;margin:0;padding:0;display:grid;gap:7px}
+.edu-studio-issue{display:flex;align-items:flex-start;gap:8px;padding:9px 10px;border-radius:10px;font-size:12.5px;line-height:1.5;overflow-wrap:anywhere}
+.edu-studio-issue>svg{flex:none;margin-top:2px}.edu-studio-issue>span{flex:1;min-width:0}
+.edu-studio-issue.error{background:#fff0ee;color:#8f2f22;border:1px solid #f3c9c3}
+.edu-studio-issue.warn{background:#fff8e3;color:#7a5608;border:1px solid #f0dfa8}
+.edu-studio-issue button{flex:none;border:1px solid currentColor;background:transparent;color:inherit;border-radius:8px;padding:4px 8px;font-size:11.5px;font-weight:800;cursor:pointer}
+.edu-studio-confirms{display:grid;gap:6px}
+
+@media(max-width:980px){.edu-studio-layout{grid-template-columns:minmax(0,1fr)}.edu-studio-slide{min-height:290px}}
 @media(max-width:600px){.edu-v3-mainnav{gap:5px;padding:6px}.edu-v3-mainnav button{flex:1 1 44%;padding:10px 7px;font-size:12px}.edu-studio-top{padding:19px;align-items:flex-start;flex-direction:column}.edu-studio-mode{white-space:normal}.edu-studio-panel{padding:16px}.edu-studio-double{grid-template-columns:1fr}.edu-studio-slide{min-height:220px}.edu-studio-actions .btn{width:100%}}
 @media(prefers-reduced-motion:reduce){.edu-v3-shell,.edu-v3-mainnav button{animation:none;transition:none}}

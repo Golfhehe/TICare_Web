@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { BookOpen, WandSparkles, Download, Pencil, RotateCcw, ShieldCheck, AlertTriangle, Save, Presentation, ArrowLeft, ArrowRight, LoaderCircle, Sparkles } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { BookOpen, WandSparkles, Download, ShieldCheck, CheckCircle2, AlertTriangle, Save, Presentation, ArrowLeft, ArrowRight, LoaderCircle, Sparkles, CircleAlert } from 'lucide-react';
 import { supabase } from './supabase';
+import { checkLesson, hasErrors } from './lib/lessonCheck';
 import './education-studio.css';
 
 const SAMPLE_TOPICS = [
@@ -9,6 +10,7 @@ const SAMPLE_TOPICS = [
   {match:/lời nói|tử tế|giao tiếp/i,title:'Lời nói tử tế',focus:'Lựa chọn câu nói thân thiện và tôn trọng'},
   {match:/tic|khác biệt|hòa nhập|hoà nhập/i,title:'Tôn trọng sự khác biệt',focus:'Không phán xét các khác biệt về hành vi hoặc vận động'}
 ];
+const CONFIRMS=['Nội dung phù hợp độ tuổi của lớp.','Đã soát chính tả và cách diễn đạt.','Không có nội dung nhạy cảm hay thông tin nhận diện trẻ.','Nội dung khớp mục tiêu bài học.'];
 const gradeLabels={mam_non:'Mầm non',lop_1:'Lớp 1',lop_2:'Lớp 2',lop_3:'Lớp 3'};
 const clamp=(n,min,max)=>Math.min(max,Math.max(min,n));
 const normalizeSlide=x=>({
@@ -55,9 +57,13 @@ export default function EducationStudio({user,notify=()=>{},openAuth=()=>{}}){
   const [status,setStatus]=useState('');
   const [busy,setBusy]=useState(false);
   const [consent,setConsent]=useState(false);
-  const [approved,setApproved]=useState(false);
+  const [ticks,setTicks]=useState([false,false,false,false]);
+  const issues=useMemo(()=>lesson?checkLesson(lesson):[],[lesson]);
+  const blocked=hasErrors(issues);
+  const approved=ticks.every(Boolean)&&!blocked;
+  const resetTicks=()=>setTicks([false,false,false,false]);
   useEffect(()=>{if(lesson)setCurrent(i=>Math.max(0,Math.min(i,lesson.slides.length-1)));},[lesson?.slides?.length]);
-  function makeTemplate(){setLesson(generateTemplate(topic,grade,duration,count,objective));setSource('template');setCurrent(0);setApproved(false);setStatus('Đã tạo bản nháp theo mẫu biên soạn, không sử dụng API AI.');}
+  function makeTemplate(){setLesson(generateTemplate(topic,grade,duration,count,objective));setSource('template');setCurrent(0);resetTicks();setStatus('Đã tạo bản nháp theo mẫu biên soạn, không sử dụng API AI.');}
   async function generateAI(){
     if(!user){openAuth();return;}
     if(!consent){setStatus('Vui lòng xác nhận yêu cầu không chứa thông tin riêng tư của trẻ.');return;}
@@ -75,15 +81,15 @@ export default function EducationStudio({user,notify=()=>{},openAuth=()=>{}}){
       if(!res.ok)throw Error(payload.error||`API đang không sẵn sàng (${res.status}).`);
       const clean=normalizeLesson(payload.lesson);
       if(clean.slides.length<5)throw Error('Bài giảng AI không đủ nội dung để xem trước.');
-      setLesson(clean);setCurrent(0);setSource('ai');setApproved(false);
-      setStatus('AI đã tạo bản nháp. Giáo viên cần đọc, chỉnh sửa và xác nhận trước khi xuất.');
-    }catch(e){setStatus(`${e.message} Ông có thể chọn “Tạo bằng mẫu” để tiếp tục.`);}
+      setLesson(clean);setCurrent(0);setSource('ai');resetTicks();
+      setStatus('AI đã tạo bản nháp. Giáo viên cần đọc, chỉnh sửa và xác nhận trước khi xuất.'+(Number.isInteger(payload.remaining)?` Hôm nay bạn còn ${payload.remaining} lượt AI.`:''));
+    }catch(e){setStatus(`${e.message} Bạn có thể chọn “Tạo bằng mẫu” để tiếp tục.`);}
     finally{setBusy(false);}
   }
-  function changeSlide(k,value){setLesson(old=>({...old,slides:old.slides.map((s,i)=>i!==current?s:{...s,[k]:value})}));setApproved(false);}
+  function changeSlide(k,value){setLesson(old=>({...old,slides:old.slides.map((s,i)=>i!==current?s:{...s,[k]:value})}));resetTicks();}
   function persist(){if(!lesson)return;try{localStorage.setItem('ticare_edu_studio_draft_v3',JSON.stringify(lesson));setStatus('Đã lưu bản nháp trên trình duyệt này, không đồng bộ Supabase.');}catch{setStatus('Không thể lưu bản nháp trên thiết bị này.');}}
   async function exportPPTX(){
-    if(!lesson||!approved){setStatus('Hãy kiểm tra và xác nhận nội dung trước khi xuất.');return;}
+    if(!lesson||!approved){setStatus(blocked?'Còn lỗi cần sửa trước khi xuất (xem bảng kiểm tra).':'Hãy tick đủ 4 mục xác nhận trước khi xuất.');return;}
     setBusy(true);
     try{
       const {default:PptxGenJS}=await import('pptxgenjs');
@@ -124,7 +130,12 @@ export default function EducationStudio({user,notify=()=>{},openAuth=()=>{}}){
           <div className="edu-studio-slide" aria-label="Xem trước trang trình chiếu"><small>TICare Education · {gradeLabels[grade]}</small><div className="edu-studio-emoji">{slide.emoji}</div><h3>{slide.title}</h3><p>{slide.body}</p>{slide.prompt&&<blockquote>{slide.prompt}</blockquote>}</div>
           <div className="edu-studio-navigation"><button type="button" disabled={current===0} onClick={()=>setCurrent(n=>n-1)}><ArrowLeft size={16}/> Trước</button><b>Trang {current+1}/{lesson.slides.length}</b><button type="button" disabled={current===lesson.slides.length-1} onClick={()=>setCurrent(n=>n+1)}>Tiếp <ArrowRight size={16}/></button></div>
           <div className="edu-studio-editor"><label>Tiêu đề slide<input value={slide.title} onChange={e=>changeSlide('title',e.target.value)} maxLength={110}/></label><label>Nội dung<textarea value={slide.body} onChange={e=>changeSlide('body',e.target.value)} rows={3} maxLength={550}/></label><label>Câu hỏi gợi mở<input value={slide.prompt} onChange={e=>changeSlide('prompt',e.target.value)} maxLength={300}/></label></div>
-          <label className="edu-studio-consent"><input type="checkbox" checked={approved} onChange={e=>setApproved(e.target.checked)}/><span>Tôi đã đọc, chỉnh sửa và duyệt nội dung cho độ tuổi này trước khi xuất học liệu.</span></label>
+          <div className="edu-studio-check" aria-label="Kiểm tra trước khi xuất">
+            <h4><ShieldCheck size={16}/> Kiểm tra trước khi xuất</h4>
+            {issues.length===0?<p className="edu-studio-check-ok"><CheckCircle2 size={15}/> Không phát hiện vấn đề tự động. Bạn vẫn cần đọc lại nội dung.</p>:<ul className="edu-studio-issues">{issues.map((x,i)=><li key={i} className={'edu-studio-issue '+x.level}><CircleAlert size={15}/><span><b>{x.level==='error'?'Lỗi':'Lưu ý'}{x.slide?' · Slide '+x.slide:''}:</b> {x.message}</span>{x.slide&&<button type="button" onClick={()=>setCurrent(x.slide-1)}>Đến slide</button>}</li>)}</ul>}
+            <div className="edu-studio-confirms">{CONFIRMS.map((label,i)=><label key={i} className="edu-studio-consent"><input type="checkbox" checked={ticks[i]} onChange={e=>setTicks(t=>t.map((v,j)=>j===i?e.target.checked:v))}/><span>{label}</span></label>)}</div>
+            {blocked?<p className="edu-studio-muted" role="status">Cần sửa hết các lỗi trước khi xuất PowerPoint.</p>:!ticks.every(Boolean)&&<p className="edu-studio-muted">Tick đủ 4 mục để bật nút xuất. Sửa nội dung sẽ xoá các dấu tick.</p>}
+          </div>
           <div className="edu-studio-actions"><button className="btn btn-outline" type="button" onClick={persist}><Save size={16}/> Lưu bản nháp</button><button className="btn btn-primary" type="button" disabled={!approved||busy} onClick={exportPPTX}><Download size={16}/> Xuất PowerPoint</button></div>
         </>}
       </div>
