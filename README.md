@@ -1,88 +1,74 @@
-> **ĐƯA LÊN INTERNET:** Xem [DEPLOY_WINDOWS10.md](DEPLOY_WINDOWS10.md) để đưa TICare lên Vercel + Supabase, có đăng ký/đăng nhập và dữ liệu chung. Backend AI serverless tại `api/ask.js` chạy cùng Vercel khi có OPENAI_API_KEY.
+# TICare Web
 
-# TICare Web — bản demo phát triển 1.0
+Nền tảng tiếng Việt hỗ trợ giáo viên và nhà trường **quan sát — tìm hiểu — lập kế hoạch — triển khai hoạt động giáo dục** cho học sinh có biểu hiện tic.
+TICare là công cụ giáo dục và quan sát, **không chẩn đoán và không thay thế đánh giá của chuyên gia y tế**.
 
-Nền tảng hỗ trợ giáo viên về tic, với giao diện tiếng Việt, gồm:
+> Triển khai lên Internet: xem [DEPLOY_WINDOWS10.md](DEPLOY_WINDOWS10.md). Database và quy trình migration: xem [supabase/README.md](supabase/README.md).
 
-- **A** Quan sát vận động: webcam, MediaPipe Pose Landmarker chạy ngay trên trình duyệt, phân tích tín hiệu dao động tương đối của đầu và đưa ra ước lượng chu kỳ mang tính thử nghiệm. Không chẩn đoán tic.
-- **B** Cộng đồng: bảng tin, tìm kiếm/lọc, đăng bài, bình luận, lưu bài, báo cáo, tệp đính kèm; đăng ký/đăng nhập.
-- **C** Trợ lý thông tin: giao diện chat, câu hỏi gợi ý, nguồn CDC/NHS; backend AI và tìm kiếm giới hạn tên miền là tùy chọn.
-- **D** Giáo dục hòa nhập: bài học và tình huống mẫu.
-- **F** Góc đồng hành: tình huống và định hướng ứng xử. (Trong thiết kế trước đây phần này từng gọi là E.)
+## Phân hệ
+| Phân hệ | Chức năng chính |
+|---|---|
+| **Motion Insight** | Camera laptop/USB hoặc video kiểm thử; MediaPipe Pose + Face chạy trên trình duyệt (không gửi hình ảnh đi). Bộ phát hiện sự kiện theo kênh (đầu, cổ tay, chớp mắt, cơ mặt), độ nhạy, cảnh báo (banner, âm thanh, thông báo), lưu phiên (chỉ số liệu), lịch sử, xuất CSV/PNG. |
+| **Action** | Kế hoạch hỗ trợ: nhiệm vụ có tag, ngày bắt đầu/hạn, tiến độ, nhắc hạn, ghi chú, đính kèm có xem trước ảnh, thư viện 22 biện pháp có nguồn. |
+| **Education** | Bài học, slide, trò chơi, Góc đồng hành; học liệu chia sẻ có tag; *Học liệu của tôi*; *Quản trị* duyệt/từ chối; **Studio** tạo bài giảng bằng mẫu hoặc AI, kiểm tra nội dung trước khi xuất PowerPoint. |
+| **Community** | Bài viết, bình luận, lưu bài, báo cáo vi phạm, sửa/xoá theo quyền, quản trị báo cáo. |
+| **Chatbot** | Hỏi đáp qua Google Gemini (`/api/ask`), giới hạn 50 lượt/ngày/tài khoản; tự chuyển về câu trả lời mẫu (offline) khi chưa đăng nhập, hết lượt hoặc AI chưa cấu hình. |
+| **Quản trị** | Xử lý báo cáo (lưu người/thời điểm xử lý), duyệt học liệu. Quyền admin được kiểm soát bằng RLS trong Supabase, không chỉ ẩn nút. |
+| **TICtag** | Chưa triển khai (định hướng giai đoạn sau). Học liệu đã có trường `tags` để chuẩn bị. |
 
-## 1. Chạy ngay trên Windows 10 / 11
-
-Cài Node.js LTS (v20+), mở PowerShell trong thư mục `TICare_Web`:
-
+## Chạy trên máy (Windows 10/11)
+Cần Node.js 20+ và Docker Desktop (cho database local).
 ```powershell
 npm install
-npm run dev
+npm run db:start        # Supabase local trong Docker (lần đầu tải image)
+npm run db:reset        # tạo DB từ supabase/migrations + dữ liệu mẫu supabase/seed.sql
+copy .env.example .env.local
+# điền VITE_SUPABASE_URL=http://127.0.0.1:55321 và VITE_SUPABASE_ANON_KEY (lấy bằng: npx supabase status)
+npm run dev             # http://localhost:5173
 ```
+- Tài khoản test (chỉ local): xem đầu file `supabase/seed.sql`.
+- Studio xem bảng: http://127.0.0.1:55323 · Hộp thư email test: http://127.0.0.1:55324
+- Thử AI ở local: điền `GEMINI_API_KEY` vào `.env.local` rồi chạy lại `npm run dev` (plugin `devApi` của Vite chạy các hàm trong `api/`).
+- Không có Supabase (để trống 2 biến `VITE_SUPABASE_*`): vẫn xem được giao diện, bài học mẫu, Motion và câu trả lời mẫu; các chức năng cần tài khoản (đăng bài, lưu phiên, kế hoạch, học liệu) không hoạt động.
 
-Mở địa chỉ được Vite hiển thị, thường là **http://localhost:5173**. Không cần Supabase hay API key để thử giao diện.
-
-**Lưu ý:** webcam yêu cầu quyền camera và internet để tải thư viện MediaPipe/mô hình lần đầu. Mở trên `localhost` hoặc HTTPS. Camera không gửi hình ảnh lên backend của TICare.
-
-## 2. Chế độ demo (mặc định)
-
-Nếu không có biến môi trường Supabase, bài viết, bình luận, báo cáo và tài khoản demo được lưu bằng `localStorage` **chỉ trong trình duyệt hiện tại**. Đây không phải đăng nhập bảo mật: mật khẩu demo nằm trong localStorage. **Không dùng mật khẩu thật.** Không có chia sẻ bài đăng giữa các máy. Tệp nhỏ (<= 1,5 MB) được lưu dạng Data URL; bộ nhớ trình duyệt có giới hạn. Các bài mẫu có nhãn demo.
-
-Chatbot trả lời bằng một số câu mẫu đã biên soạn sẵn, kèm liên kết đọc thêm. **Nó không truy cập Internet trực tiếp trong chế độ demo.**
-
-## 3. Kết nối Supabase để dùng tài khoản và bài đăng thật
-
-1. Tạo project trên https://supabase.com.
-2. Mở SQL Editor và chạy `supabase/schema.sql` trên project mới. **Hãy kiểm tra các policy trước khi triển khai công khai.**
-3. Sao chép `.env.example` thành `.env.local`, điền `VITE_SUPABASE_URL` và `VITE_SUPABASE_ANON_KEY` (publishable/anon key, không dùng service role).
-4. Chạy lại `npm run dev`.
-5. Trong Authentication, cấu hình email confirmation / Site URL / Redirect URLs cho môi trường của ông.
-
-Trong chế độ Supabase, việc đăng bài và tệp dùng backend thật. Chức năng bình luận cho bài do người dùng tạo sử dụng database. **Các bài mẫu là nội dung minh họa, không thể bình luận lên database.** Các nút Lưu bài hiện lưu cục bộ trên trình duyệt. Bảng admin kiểm duyệt chưa được triển khai đầy đủ.
-
-## 4. Kết nối chatbot AI và tìm kiếm web
-
-Cần có API key riêng (có thể phát sinh chi phí):
-- `OPENAI_API_KEY`: dịch vụ tạo câu trả lời.
-- `TAVILY_API_KEY`: tùy chọn, tìm kiếm nguồn trong `cdc.gov`, `nhs.uk`, `tourette.org`.
-
-Trên PowerShell, chạy backend ở một cửa sổ khác (ví dụ):
-
+## Kiểm thử
 ```powershell
-$env:OPENAI_API_KEY="YOUR_KEY"
-$env:TAVILY_API_KEY="YOUR_KEY"
-$env:ALLOWED_ORIGIN="http://localhost:5173"
-npm run server
-```
-
-Đặt `VITE_ASSISTANT_API_URL=http://localhost:8787` trong `.env.local`, khởi động lại frontend. **Không** đưa key vào biến bắt đầu bằng `VITE_`, không commit `.env.local` lên Git.
-
-Backend hiện là bản tích hợp tối thiểu: chưa có xác thực người gọi, rate limiting, cache, crawling toàn văn, kiểm chứng trích dẫn ở cấp đoạn và giám sát chi phí. Nếu backend không sẵn sàng, giao diện tự chuyển về câu trả lời mẫu và có thông báo rõ ràng. Không triển khai backend này công khai trước khi bổ sung bảo vệ.
-
-## 5. Build / triển khai
-
-```powershell
+npm run lint            # ESLint
+npm test                # Vitest: unit + component + API (mock)
 npm run build
-npm run preview
+npm run test:rls        # 33 tình huống phân quyền trên Supabase local
+```
+CI (`.github/workflows/ci.yml`) chạy toàn bộ các lệnh trên, kể cả `test:rls` với Supabase trong Docker.
+
+## Biến môi trường
+| Biến | Nơi dùng | Ghi chú |
+|---|---|---|
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | trình duyệt | Công khai theo thiết kế Supabase. **Không** dùng service_role. |
+| `VITE_DEMO_VIDEO_URL` | trình duyệt | Tuỳ chọn. https tới .mp4/.webm hoặc link YouTube cho video giới thiệu trang chủ. |
+| `VITE_ASSISTANT_API_URL` | trình duyệt | Tuỳ chọn, mặc định `/api/ask`. |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | server (`api/`) | **Không** đặt tiền tố `VITE_`. Model mặc định `gemini-2.5-flash`. |
+| `TAVILY_API_KEY` | server | Tuỳ chọn, tìm nguồn trong cdc.gov, nhs.uk, who.int, tourette.org. |
+| `TICARE_DEMO_CODE` | server | Tuỳ chọn (≥ 16 ký tự): mã thử chatbot không cần tài khoản, giới hạn theo IP. |
+
+## Cấu trúc
+```
+api/                 Hàm serverless Vercel: ask.js (chatbot), education-generate.js (Studio), _lib/ (xác thực + hạn mức)
+src/App.jsx          Khung ứng dụng, điều hướng, Community, Education, Admin
+src/home/            Trang chủ, video demo
+src/motion/          Motion Insight: detector.js (thuật toán), Motion.jsx, lịch sử phiên, đồng thuận
+src/action/ + Action.jsx   TICare Action
+src/education/ + EducationStudio.jsx   Học liệu của tôi, Quản trị học liệu, Studio
+src/assistant/       Chatbot
+src/components/      Modal dùng chung
+src/pages/Privacy.jsx      Quyền riêng tư & đồng thuận
+src/lib/             Tiện ích: db (mutate), uid, api, authErrors, lessonCheck, eduTags
+supabase/            migrations/, seed.sql (dữ liệu giả lập), config.toml, README.md
+scripts/             rls-smoke.mjs (test phân quyền), db-pull.ps1 (kéo dump production, tuỳ chọn)
 ```
 
-Thư mục `dist/` có thể đưa lên Vercel (framework Vite). Camera cần HTTPS. Backend Node hiện tại phải được triển khai riêng trên môi trường hỗ trợ Node server hoặc chuyển thành serverless function. Supabase cần cấu hình URL của site khi deploy.
-
-## 6. Những giới hạn cần nói trung thực với BGK
-
-- Đây là **bản demo phát triển**, không phải hệ thống đã được kiểm định y tế hay hoàn chỉnh cho trường học.
-- Camera chỉ thử nghiệm mô tả chuyển động lặp lại của **một người đầu tiên**, dù MediaPipe có thể hiển thị tối đa 3 bộ điểm khớp. Có thể sai khi người di chuyển, thay đổi góc nhìn hoặc bị che khuất.
-- Camera không xác định tic, không xác định học sinh mắc bệnh, không suy luận cảm xúc.
-- Chế độ demo không đồng bộ cộng đồng giữa các máy; tài khoản demo không an toàn để sử dụng thật.
-- Tài liệu D/F là nội dung minh họa; nên được rà soát trước khi đưa vào lớp học.
-- Bản live chatbot cần kiểm thử kỹ độ chính xác nguồn và an toàn thông tin.
-- Cần kiểm soát upload, spam, kiểm duyệt nội dung và dữ liệu cá nhân trước khi công khai cho nhiều người dùng.
-
-## 7. Cấu trúc
-
-- `src/App.jsx` — các trang và tương tác.
-- `src/style.css` — thiết kế giao diện.
-- `src/data.js` — nội dung mẫu, gợi ý chat.
-- `src/supabase.js` — kết nối dữ liệu tùy chọn.
-- `server/index.js` — backend AI tùy chọn.
-- `supabase/schema.sql` — bảng dữ liệu và RLS cơ bản.
-- `.env.example` — cấu hình tham khảo.
+## Giới hạn cần nói rõ
+- Motion Insight mô tả tín hiệu chuyển động, **không xác định tic, mức độ hay loại tic**. Thuật toán đã kiểm chứng bằng tín hiệu tổng hợp; cần kiểm thử thêm với camera thật, nhiều góc quay và video có nhãn.
+- Chỉ phân tích một người trong khung hình; kết quả có thể sai khi bị che, đổi góc, ánh sáng yếu hoặc máy chạy dưới 12 khung hình/giây.
+- Không kết nối trực tiếp camera IP/RTSP của lớp học; chỉ camera trình duyệt nhận được (laptop, USB, webcam ảo).
+- Nội dung AI (Chatbot, Studio) là bản nháp tham khảo, giáo viên phải kiểm tra trước khi sử dụng.
+- Trước khi dùng với học sinh thật: cần sự đồng ý của nhà trường/phụ huynh và rà soát trang *Quyền riêng tư & đồng thuận* theo quy định bảo vệ dữ liệu cá nhân hiện hành.

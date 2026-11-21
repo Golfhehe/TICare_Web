@@ -1,68 +1,56 @@
-# Đưa TICare lên Internet (Windows 10) — hướng dẫn từng bước
+# Đưa TICare lên Internet (Vercel + Supabase)
 
-## 1. Chuẩn bị
+Production hiện dùng: mã nguồn trên GitHub → Vercel tự build → Supabase cho tài khoản/dữ liệu.
+**Không gửi API key hoặc mật khẩu cho người khác.** Không đặt `GEMINI_API_KEY` trong mã React, biến `VITE_` hoặc repository.
 
-- Một tài khoản GitHub: https://github.com
-- Một tài khoản Vercel: https://vercel.com (đăng nhập bằng GitHub)
-- Một tài khoản Supabase: https://supabase.com
-- Tùy chọn: OpenAI API key để chạy chatbot AI thật (có thể phát sinh phí); Tavily API key nếu muốn tra cứu web.
+## 1. Cập nhật database production (làm TRƯỚC khi deploy code mới)
+Các thay đổi database nằm trong `supabase/migrations/`. Xem bảng trạng thái trong [supabase/README.md](supabase/README.md).
+Lần đầu (một lần duy nhất), trong PowerShell tại thư mục dự án:
+```powershell
+npx supabase login
+npx supabase link --project-ref <project-ref>          # nhập mật khẩu database khi được hỏi
+npx supabase migration repair --status applied 20261116000000 20261116000100
+```
+Mỗi lần có migration mới:
+```powershell
+npx supabase db push --dry-run    # xem migration nào sẽ chạy
+npx supabase db push
+```
+- `<project-ref>` nằm trong URL dashboard: `https://supabase.com/dashboard/project/<project-ref>`.
+- Không bao giờ chạy `seed.sql` hay `db reset --linked` trên production.
+- Nếu project Supabase bị tạm dừng (gói miễn phí để lâu không dùng), bấm *Restore* trong dashboard trước.
 
-**Không gửi API key hoặc mật khẩu cho người khác.** Không đặt OPENAI_API_KEY trong mã React, biến `VITE_` hoặc repository.
+## 2. Cấu hình Vercel
+**Settings → Environment Variables** (Production và Preview):
+| Biến | Giá trị |
+|---|---|
+| `VITE_SUPABASE_URL` | Project URL |
+| `VITE_SUPABASE_ANON_KEY` | publishable/anon key (không dùng service_role) |
+| `GEMINI_API_KEY` | khoá Google Gemini (server-side) |
+| `GEMINI_MODEL` | tuỳ chọn, mặc định `gemini-2.5-flash` |
+| `TAVILY_API_KEY` | tuỳ chọn |
+| `VITE_DEMO_VIDEO_URL` | tuỳ chọn, video giới thiệu trang chủ |
 
-## 2. Cấu hình Supabase — để đăng ký, đăng nhập, bài đăng hoạt động trên nhiều máy
+Không điền `VITE_ASSISTANT_API_URL` (chatbot gọi `/api/ask` cùng tên miền). **Đổi biến môi trường xong phải Redeploy.**
 
-1. Tạo một project Supabase mới.
-2. Vào **SQL Editor** → New query → dán nội dung `supabase/schema.sql` → Run (chỉ dùng cho project mới, xem lại các chính sách trước khi dùng công khai).
-3. Vào **Project Settings → API Keys** và lấy **Project URL** cùng **publishable key** (hoặc anon key). Không lấy service_role.
-4. Vào **Authentication → Providers → Email**, bật Email provider; cấu hình yêu cầu xác nhận email theo nhu cầu.
-5. Sau khi Vercel cấp URL, vào **Authentication → URL Configuration** đặt Site URL thành `https://<ten-web>.vercel.app`, thêm cùng URL vào Redirect URLs.
+## 3. Cấu hình Supabase Auth
+**Authentication → URL Configuration**: Site URL = `https://<ten-web>.vercel.app`; thêm cùng URL (và URL preview nếu cần) vào Redirect URLs để email xác nhận/đặt lại mật khẩu mở đúng trang.
 
-> Khi Supabase chưa được cấu hình, web dùng localStorage để trình diễn trên một trình duyệt, KHÔNG có tài khoản chung hay dữ liệu cộng đồng giữa các máy.
-
-## 3. Đưa mã nguồn lên GitHub (không cần VS Code)
-
-1. Giải nén ZIP `TICare_Web_Online_Ready.zip`.
-2. Vào GitHub → **New repository** → đặt tên `ticare-web` → Create repository.
-3. Trong repository → **Add file → Upload files**. Tải lên **nội dung bên trong thư mục TICare_Web** (đảm bảo `package.json` nằm ở gốc repo). Nếu giao diện GitHub không hỗ trợ kéo nguyên thư mục, dùng GitHub Desktop hoặc Git trên Windows.
-4. Tuyệt đối không upload `.env.local`, `node_modules`, khóa bí mật.
-
-## 4. Triển khai Vercel
-
-1. Vercel → **Add New → Project** → Import repository `ticare-web`.
-2. Framework Preset: **Vite**; Build Command: `npm run build`; Output Directory: `dist`.
-3. Trong **Environment Variables** điền:
-   - `VITE_SUPABASE_URL` = URL Supabase
-   - `VITE_SUPABASE_ANON_KEY` = publishable/anon key
-   - `OPENAI_API_KEY` = khóa API OpenAI, chỉ dùng server-side (nếu có)
-   - `OPENAI_MODEL` = `gpt-4.1-mini` (tùy chọn)
-   - `TAVILY_API_KEY` = khóa Tavily (tùy chọn)
-   - **KHÔNG** điền `VITE_ASSISTANT_API_URL`: trên Vercel, chatbot gọi `/api/ask` cùng tên miền.
-4. Bấm **Deploy**, chờ build xong. Vercel sẽ cấp đường dẫn `https://...vercel.app`.
-5. Quay lại Supabase cấu hình Site URL như bước 2. Nếu chỉnh biến môi trường, bấm **Redeploy**.
+## 4. Đưa code lên
+Đẩy nhánh lên GitHub; Vercel tự build. Nên đẩy lên một nhánh riêng trước để Vercel tạo bản *Preview*, kiểm tra xong mới gộp vào nhánh chính.
+Thứ tự an toàn: **migration (mục 1) → biến môi trường (mục 2) → code (mục 4)**.
 
 ## 5. Kiểm thử sau triển khai
-
-- Mở URL trên hai trình duyệt hoặc hai máy khác nhau.
-- Tạo tài khoản A và B bằng hai email khác nhau, xác nhận email nếu bật.
-- Đăng bài từ A → kiểm tra B có nhìn thấy bài không → B bình luận → A tải lại trang để thấy bình luận.
-- Bật camera và cho phép truy cập. Camera cần HTTPS, nên dùng URL Vercel. Không thử camera với học sinh thật khi chưa có sự đồng ý và quy trình bảo vệ quyền riêng tư.
-- Gửi câu hỏi vào chatbot. Nếu chưa có `OPENAI_API_KEY`, chatbot sẽ hiển thị **câu trả lời mẫu**, không phải AI thật.
+Dùng checklist phát hành trong `NOTE.md` §11. Tối thiểu:
+- Hai tài khoản thường + một admin: đăng bài, bình luận, sửa/xoá đúng quyền, báo cáo → admin xử lý.
+- Education: gửi học liệu → admin từ chối có ghi chú / duyệt → hiện ở Học liệu chia sẻ; Studio tạo bằng AI và bằng mẫu, xuất `.pptx` mở được.
+- Action: tạo kế hoạch, nhiệm vụ có hạn, đính kèm ảnh.
+- Motion (cần HTTPS): camera laptop + USB, lắc tay 15 giây ở độ nhạy thấp nhất có cảnh báo, ngồi yên 2 phút không cảnh báo nhầm, lưu phiên và mở lại.
+- Chatbot: câu trả lời AI, và câu hỏi chẩn đoán/thuốc được từ chối an toàn.
+- Mở DevTools → Console: ghi lại các cảnh báo *Content-Security-Policy (Report-Only)* nếu có; khi không còn cảnh báo có thể đổi header trong `vercel.json` từ `Content-Security-Policy-Report-Only` sang `Content-Security-Policy`.
 
 ## 6. Giới hạn và an toàn
-
-- Motion Insight chỉ mô tả tín hiệu chuyển động, không phát hiện/chẩn đoán tic; kết quả có thể sai.
-- Dữ liệu cộng đồng và xác thực Supabase dùng thật khi cấu hình, nhưng chưa có quy trình kiểm duyệt, chống spam, quét tệp độc hại và giới hạn truy cập ở cấp triển khai hoàn chỉnh.
-- API chatbot yêu cầu đăng nhập khi có Supabase. Chưa có rate limiting phân tán hoặc hạn mức theo tài khoản; **không mở chatbot API trả phí rộng rãi trước khi đặt quota/bảo vệ chống lạm dụng**.
-- Không tải dữ liệu cá nhân, hình ảnh học sinh, tài liệu nhạy cảm lên cộng đồng.
-- Nếu website công khai cho nhiều người, cần hoàn thiện kiểm duyệt, điều khoản và chính sách riêng tư trước khi dùng thực tế.
-
-## 7. Chạy trên Windows 10
-
-Mở CMD ở thư mục có `package.json`:
-
-```cmd
-npm install
-npm run dev
-```
-
-Mở địa chỉ được hiển thị, thường là `http://localhost:5173`.
+- Motion Insight chỉ mô tả tín hiệu chuyển động, không chẩn đoán; không lưu video.
+- Chưa có quét tệp độc hại cho tệp tải lên; giới hạn loại/dung lượng tệp do bucket Supabase kiểm soát.
+- Hạn mức AI: 50 lượt chatbot và 20 lượt Studio mỗi tài khoản mỗi ngày (bảng `ai_usage`).
+- Trước khi dùng rộng rãi: rà soát trang *Quyền riêng tư & đồng thuận*, quy trình xin phép nhà trường/phụ huynh, và thời hạn lưu trữ dữ liệu.
