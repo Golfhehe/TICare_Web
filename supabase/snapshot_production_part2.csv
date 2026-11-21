@@ -1,0 +1,157 @@
+kind,obj,name,info,expr1,expr2
+functiondef,public,is_admin,,"CREATE OR REPLACE FUNCTION public.is_admin()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$select exists(select 1 from public.profiles where id=(select auth.uid()) and role='admin')$function$
+",
+functiondef,public,new_profile,,"CREATE OR REPLACE FUNCTION public.new_profile()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$ begin insert into public.profiles(id,display_name) values(new.id,coalesce(new.raw_user_meta_data->>'display_name',split_part(new.email,'@',1)));return new;end;$function$
+",
+functiondef,public,ticare_action_guard,,"CREATE OR REPLACE FUNCTION public.ticare_action_guard()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  IF TG_OP='UPDATE' THEN
+    IF NEW.owner_id IS DISTINCT FROM OLD.owner_id OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+      RAISE EXCEPTION 'Cannot change action plan ownership or creation date';
+    END IF;
+  END IF;
+  NEW.updated_at=now();
+  RETURN NEW;
+END; $function$
+",
+functiondef,public,ticare_protect_comment,,"CREATE OR REPLACE FUNCTION public.ticare_protect_comment()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  IF auth.uid() IS NOT NULL AND (
+    NEW.id IS DISTINCT FROM OLD.id OR
+    NEW.author_id IS DISTINCT FROM OLD.author_id OR
+    NEW.post_id IS DISTINCT FROM OLD.post_id OR
+    NEW.created_at IS DISTINCT FROM OLD.created_at
+  ) THEN
+    RAISE EXCEPTION 'Only comment body can be changed';
+  END IF;
+  RETURN NEW;
+END;
+$function$
+",
+functiondef,public,ticare_protect_post,,"CREATE OR REPLACE FUNCTION public.ticare_protect_post()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  IF auth.uid() IS NOT NULL AND NOT public.is_admin() THEN
+    IF NEW.id IS DISTINCT FROM OLD.id OR
+       NEW.author_id IS DISTINCT FROM OLD.author_id OR
+       NEW.created_at IS DISTINCT FROM OLD.created_at OR
+       (NEW.status IS DISTINCT FROM OLD.status AND
+         NOT (OLD.status = 'published' AND NEW.status = 'removed'))
+    THEN
+      RAISE EXCEPTION 'Not allowed to change protected post fields';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$function$
+",
+functiondef,public,ticare_protect_profile,,"CREATE OR REPLACE FUNCTION public.ticare_protect_profile()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  IF auth.uid() IS NOT NULL AND (
+    NEW.id IS DISTINCT FROM OLD.id OR
+    NEW.role IS DISTINCT FROM OLD.role OR
+    NEW.created_at IS DISTINCT FROM OLD.created_at
+  ) THEN
+    RAISE EXCEPTION 'Only display_name can be changed';
+  END IF;
+  RETURN NEW;
+END;
+$function$
+",
+index,post_attachments,post_attachments_pkey,,CREATE UNIQUE INDEX post_attachments_pkey ON public.post_attachments USING btree (id),
+index,profiles,profiles_pkey,,CREATE UNIQUE INDEX profiles_pkey ON public.profiles USING btree (id),
+index,reports,reports_pkey,,CREATE UNIQUE INDEX reports_pkey ON public.reports USING btree (id),
+index,reports,reports_status_created_idx,,"CREATE INDEX reports_status_created_idx ON public.reports USING btree (status, created_at DESC)",
+index,saved_posts,saved_posts_pkey,,"CREATE UNIQUE INDEX saved_posts_pkey ON public.saved_posts USING btree (user_id, post_id)",
+index,saved_posts,saved_posts_post_idx,,CREATE INDEX saved_posts_post_idx ON public.saved_posts USING btree (post_id),
+policy,public.action_plans,action_delete_own,DELETE authenticated,(owner_id = ( SELECT auth.uid() AS uid)),
+policy,public.action_plans,action_insert_own,INSERT authenticated,,(owner_id = ( SELECT auth.uid() AS uid))
+policy,public.action_plans,action_select_own,SELECT authenticated,(owner_id = ( SELECT auth.uid() AS uid)),
+policy,public.action_plans,action_update_own,UPDATE authenticated,(owner_id = ( SELECT auth.uid() AS uid)),(owner_id = ( SELECT auth.uid() AS uid))
+policy,public.comments,member_delete_own_comments,DELETE authenticated,"((author_id = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1
+   FROM posts p
+  WHERE ((p.id = comments.post_id) AND (p.status = 'published'::text)))))",
+policy,public.comments,member_edit_own_comments,UPDATE authenticated,"((author_id = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1
+   FROM posts p
+  WHERE ((p.id = comments.post_id) AND (p.status = 'published'::text)))))","((author_id = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1
+   FROM posts p
+  WHERE ((p.id = comments.post_id) AND (p.status = 'published'::text)))))"
+policy,public.comments,read comments,SELECT public,"(EXISTS ( SELECT 1
+   FROM posts p
+  WHERE ((p.id = comments.post_id) AND (p.status = 'published'::text))))",
+policy,public.comments,write comments,INSERT authenticated,,"((author_id = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1
+   FROM posts p
+  WHERE ((p.id = comments.post_id) AND (p.status = 'published'::text)))))"
+policy,public.education_resources,education_admin_review,UPDATE authenticated,( SELECT is_admin() AS is_admin),( SELECT is_admin() AS is_admin)
+policy,public.education_resources,education_member_insert,INSERT authenticated,,((author_id = ( SELECT auth.uid() AS uid)) AND (status = 'pending'::text) AND ((kind = 'link'::text) OR (storage_path ~~ ((auth.uid())::text || '/%'::text))))
+policy,public.education_resources,education_public_read,"SELECT anon,authenticated",((status = 'approved'::text) OR (( SELECT auth.uid() AS uid) = author_id) OR ( SELECT is_admin() AS is_admin)),
+policy,public.post_attachments,attach to own post,INSERT authenticated,,"(EXISTS ( SELECT 1
+   FROM posts p
+  WHERE ((p.id = post_attachments.post_id) AND (p.author_id = ( SELECT auth.uid() AS uid)))))"
+policy,public.post_attachments,read attachments,SELECT public,"(EXISTS ( SELECT 1
+   FROM posts p
+  WHERE ((p.id = post_attachments.post_id) AND ((p.status = 'published'::text) OR (p.author_id = ( SELECT auth.uid() AS uid)) OR is_admin()))))",
+policy,public.posts,admin_moderate_posts,UPDATE authenticated,( SELECT is_admin() AS is_admin),( SELECT is_admin() AS is_admin)
+policy,public.posts,delete own posts,DELETE authenticated,((author_id = ( SELECT auth.uid() AS uid)) OR is_admin()),
+policy,public.posts,member_edit_own_posts,UPDATE authenticated,((author_id = ( SELECT auth.uid() AS uid)) AND (status = 'published'::text)),"((author_id = ( SELECT auth.uid() AS uid)) AND (status = ANY (ARRAY['published'::text, 'removed'::text])))"
+policy,public.posts,read public posts,SELECT public,((status = 'published'::text) OR (author_id = ( SELECT auth.uid() AS uid)) OR is_admin()),
+policy,public.posts,write own posts,INSERT authenticated,,((author_id = ( SELECT auth.uid() AS uid)) AND (status = 'published'::text))
+policy,public.profiles,own profile,UPDATE authenticated,(id = ( SELECT auth.uid() AS uid)),(id = ( SELECT auth.uid() AS uid))
+policy,public.profiles,public profiles,SELECT public,true,
+policy,public.reports,admin_manage_reports,UPDATE authenticated,( SELECT is_admin() AS is_admin),( SELECT is_admin() AS is_admin)
+policy,public.reports,create reports,INSERT authenticated,,(reporter_id = ( SELECT auth.uid() AS uid))
+policy,public.reports,read own reports,SELECT authenticated,((reporter_id = ( SELECT auth.uid() AS uid)) OR is_admin()),
+policy,public.saved_posts,saved_posts_delete_own,DELETE authenticated,(user_id = ( SELECT auth.uid() AS uid)),
+policy,public.saved_posts,saved_posts_insert_own,INSERT authenticated,,"((user_id = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1
+   FROM posts p
+  WHERE ((p.id = saved_posts.post_id) AND (p.status = 'published'::text)))))"
+policy,public.saved_posts,saved_posts_read_own,SELECT authenticated,(user_id = ( SELECT auth.uid() AS uid)),
+policy,storage.objects,action_notes_owner_delete,DELETE authenticated,((bucket_id = 'action-notes'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text)),
+policy,storage.objects,action_notes_owner_insert,INSERT authenticated,,"((bucket_id = 'action-notes'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text) AND (EXISTS ( SELECT 1
+   FROM action_plans ap
+  WHERE (((ap.id)::text = (storage.foldername(objects.name))[2]) AND (ap.owner_id = ( SELECT auth.uid() AS uid))))))"
+policy,storage.objects,action_notes_owner_read,SELECT authenticated,((bucket_id = 'action-notes'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text)),
+policy,storage.objects,education_storage_cleanup,DELETE authenticated,"((bucket_id = 'education-resources'::text) AND ((storage.foldername(name))[1] = (auth.uid())::text) AND (NOT (EXISTS ( SELECT 1
+   FROM education_resources r
+  WHERE ((r.storage_path = objects.name) AND (r.status = 'approved'::text))))))",
+policy,storage.objects,education_storage_read,SELECT authenticated,"((bucket_id = 'education-resources'::text) AND (((storage.foldername(name))[1] = (auth.uid())::text) OR ( SELECT is_admin() AS is_admin) OR (EXISTS ( SELECT 1
+   FROM education_resources r
+  WHERE ((r.storage_path = objects.name) AND (r.status = 'approved'::text))))))",
+policy,storage.objects,education_storage_read_public,SELECT anon,"((bucket_id = 'education-resources'::text) AND (EXISTS ( SELECT 1
+   FROM education_resources r
+  WHERE ((r.storage_path = objects.name) AND (r.status = 'approved'::text)))))",
+policy,storage.objects,education_storage_upload,INSERT authenticated,,((bucket_id = 'education-resources'::text) AND ((storage.foldername(name))[1] = (auth.uid())::text))
+policy,storage.objects,read community files,SELECT public,"((bucket_id = 'community-files'::text) AND (EXISTS ( SELECT 1
+   FROM (post_attachments a
+     JOIN posts p ON ((p.id = a.post_id)))
+  WHERE ((a.storage_path = objects.name) AND ((p.status = 'published'::text) OR (p.author_id = ( SELECT auth.uid() AS uid)) OR is_admin())))))",
+policy,storage.objects,upload own community files,INSERT authenticated,,((bucket_id = 'community-files'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))
+trigger,action_plans,ticare_action_guard_trigger,BEFORE UPDATE,EXECUTE FUNCTION ticare_action_guard(),
+trigger,comments,ticare_guard_comment,BEFORE UPDATE,EXECUTE FUNCTION ticare_protect_comment(),
+trigger,posts,ticare_guard_post,BEFORE UPDATE,EXECUTE FUNCTION ticare_protect_post(),
+trigger,profiles,ticare_guard_profile,BEFORE UPDATE,EXECUTE FUNCTION ticare_protect_profile(),
